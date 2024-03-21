@@ -1,7 +1,7 @@
 "LR": 2.5e-4
-"NUM_ENVS": 64
-"NUM_STEPS": 128
-"TOTAL_TIMESTEPS": 1e6
+"NUM_ENVS": 8
+"NUM_STEPS": 10
+"TOTAL_TIMESTEPS": 1e4
 "UPDATE_EPOCHS": 4
 "NUM_MINIBATCHES": 4
 "GAMMA": 0.99
@@ -15,8 +15,14 @@
 "ENV_NAME": "investment"
 "ENV_KWARGS": {}
 "ANNEAL_LR": True
-"DISABLE_JIT": True
+"DISABLE_JIT": False
 "DEVICE": 0
 "ENTITY": ""
 "PROJECT": "jaxmarl-investment"
 "WANDB_MODE": "disabled"
+"v_0": 1
+"w_0": 1
+"v_1": 0
+"w_1": 1
+"tail": 2
+"experiment_name": "le_vs_l"
