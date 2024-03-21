@@ -67,6 +67,92 @@ class Transition(NamedTuple):
     obs: jnp.ndarray
     info: jnp.ndarray
 
+def get_rollout(train_state, config):
+    """Get rollout with specific train state
+
+    Returns: state_seq
+    """
+    env = InvestmentEnv(
+        tail=config["tail"],
+        mechs=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
+        )
+
+    # Action space uniform for all agents
+    network = ActorCritic(env.action_space("agent_0").n, activation=config["ACTIVATION"])
+    key = jax.random.PRNGKey(0)
+    key, key_r, key_a = jax.random.split(key, 3)
+
+    # Observation space also uniform for all agents
+    init_x = jnp.zeros(env.observation_space("agent_0").shape)
+    init_x = init_x.flatten()
+
+    # Reconstruct net
+    network.init(key_a, init_x)
+    network_params = train_state.params
+
+    done = False
+
+    obs, state = env.reset(key_r)
+    state_seq = [state]
+    while not done:
+        key, key_a0, key_a1, key_a2, key_a3, key_s = jax.random.split(key, 6)
+
+        obs = {k: v.flatten() for k, v in obs.items()}
+
+        pi_0, _ = network.apply(network_params, obs["agent_0"])
+        pi_1, _ = network.apply(network_params, obs["agent_1"])
+        pi_2, _ = network.apply(network_params, obs["agent_2"])
+        pi_3, _ = network.apply(network_params, obs["agent_3"])
+
+        actions = {
+            "agent_0": pi_0.sample(seed=key_a0),
+            "agent_1": pi_1.sample(seed=key_a1),
+            "agent_2": pi_2.sample(seed=key_a2),
+            "agent_3": pi_3.sample(seed=key_a3)
+            }
+
+        # Step environment
+        obs, state, _, done, _ = env.step(key_s, state, actions)
+        done = done["__all__"]
+
+        state_seq.append(state)
+
+    return state_seq
+
+def plot_contributions(states, config):
+    """Plots contributions
+
+    Returns: N/A
+    """
+    # Extract contributions for each round
+    contributions = [state.contributions for state in states[1:-1]]
+
+    # Separate contributions for head and tail
+    head_idx = np.where(states[0].agents_money == 10)[0][0]
+    tail_idx = (head_idx + 1) % len(states[0].agents_money)
+    tail_endowment = states[0].agents_money[tail_idx]
+    head_contributions = [(contribution[head_idx] / 10) for contribution in contributions]
+    tail_contributions = [
+        [(contribution[i] / tail_endowment) for contribution in contributions]
+        for i in range(len(states[0].agents_money)) if i != head_idx
+    ]
+
+    # Calculate average contribution for each round
+    avg_contributions = np.mean(tail_contributions, axis=0)
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1,len(head_contributions)+1), head_contributions, label='Head')
+    plt.plot(range(1,len(avg_contributions)+1), avg_contributions, label='Tail')
+    plt.ylim(0, 1)
+    plt.xlabel('Step')
+    plt.ylabel('Relative Contribution')
+    plt.title(f"{config['experiment_name']} with tail contribution {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}")
+    plt.legend()
+
+    # Save plot
+    plt.savefig(f"results/ff/strategy/{config['experiment_name']}_{config['tail']}.png")
+
 def batchify(x: dict, agent_list, num_actors):
     max_dim = max([x[a].shape[-1] for a in agent_list])
     def pad(z, length):
@@ -81,7 +167,10 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
 
 def make_train(config):
     # env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
-    env = InvestmentEnv()
+    env = InvestmentEnv(
+        tail=config["tail"],
+        mechs=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
+        )
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ACTORS"]  
@@ -305,7 +394,7 @@ def main(config):
     with jax.disable_jit(config["DISABLE_JIT"]):
         train_jit = jax.jit(make_train(config), device=jax.devices()[config["DEVICE"]])
         out = train_jit(rng)
-        
+
     updates_x = jnp.arange(out["metrics"]["returned_episode_returns"].shape[0])
     returns_table = jnp.stack([updates_x, out["metrics"]["returned_episode_returns"].mean(axis=(-2, -1))], axis=1)
     returns_table = wandb.Table(data=returns_table.tolist(), columns=["updates", "returns"])
@@ -313,13 +402,18 @@ def main(config):
         "returns_plot": wandb.plot.line(returns_table, "updates", "returns", title="returns_vs_updates"),
         "returns": out["metrics"]["returned_episode_returns"].mean()
     })
-    
+
     mean_returns = out["metrics"]["returned_episode_returns"].mean(-1).reshape(-1)
     x = np.arange(len(mean_returns)) * config["NUM_ACTORS"]
     plt.plot(x, mean_returns)
     plt.xlabel("Timestep")
     plt.ylabel("Return")
-    plt.savefig('switch_riddle_ippo_ret.png')
+    plt.title(f"{config['experiment_name']} with tail contribution {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}")
+    plt.savefig(f"results/ff/train/{config['experiment_name']}_{config['tail']}.png")
+
+    train_state = out["runner_state"][0]
+    state_seq = get_rollout(train_state, config)
+    plot_contributions(state_seq, config)
 
     
     # import pdb; pdb.set_trace()

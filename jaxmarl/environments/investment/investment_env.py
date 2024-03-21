@@ -3,40 +3,42 @@ Investment environment based on https://doi.org/10.1038/s41562-022-01383-x
 """
 from __future__ import annotations
 
+from functools import partial
 import jax
 import jax.numpy as jnp
 import chex
 from flax import struct
 from jaxmarl.environments.multi_agent_env import MultiAgentEnv
-from jaxmarl.environments.spaces import Discrete, MultiDiscrete
-from functools import partial
+from jaxmarl.environments.spaces import MultiDiscrete, Box
 
 
 @struct.dataclass
 class State:
-    """
-    State of investment game
+    """State of investment game
     """
 
     agents_money: chex.Array
     contributions: chex.Array
-    step: int
+    payouts: chex.Array
+    step: jnp.float32
+    mech: int
 
 
 class InvestmentEnv(MultiAgentEnv):
-    """Represents investment environment"""
+    """Represents investment environment
+    """
 
     def __init__(
             self,
             num_agents=4,
-            num_rounds=1,
+            num_rounds=10,
+            num_games=10,
+            tail=2,
             seed=0,
-            v=1,
-            w=1
+            mechs=jnp.array([(1, 1), (0, 1)])
             ):
         super().__init__(num_agents=4)
         key = jax.random.PRNGKey(seed)
-        _, key_head, key_endowment = jax.random.split(key, 3)
 
         # Agents
         self.num_agents = num_agents
@@ -44,25 +46,30 @@ class InvestmentEnv(MultiAgentEnv):
 
         # Rounds
         self.num_rounds = num_rounds
+        self.num_games = num_games
+        self.tail = tail
 
         # Endowments
         # the amount of money a player receives each round
-        head = jax.random.choice(key_head, jnp.arange(self.num_agents))
-        self.endowments = jnp.repeat(jax.random.randint(key_endowment, (1,), 2, 9), repeats=self.num_agents)
+        head = jax.random.choice(key, jnp.arange(self.num_agents))
+        self.endowments = jnp.repeat(self.tail, repeats=self.num_agents)
         self.endowments = self.endowments.at[head].set(10)
 
         # Action spaces
-        self.action_spaces = {a: Discrete(10) for a, e in zip(self.agents, self.endowments)}
+        self.action_spaces = {a: MultiDiscrete([10, 2]) for a, e in zip(self.agents, self.endowments)}
 
         # Observation spaces
+        # self.observation_spaces = {
+        #    a: MultiDiscrete([10] * (3 * self.num_agents))
+        #    for a in self.agents
+        #    }
         self.observation_spaces = {
-            a: MultiDiscrete([10] * (2 * self.num_agents))
+            a: Box(low=0, high=10, shape=(3 * self.num_agents,), dtype=jnp.int32)
             for a in self.agents
-            }
+        }
 
         # Manifold
-        self.v = v
-        self.w = w
+        self.mechs = mechs
         self.r = 1.6
 
     @partial(jax.jit, static_argnums=[0])
@@ -74,7 +81,9 @@ class InvestmentEnv(MultiAgentEnv):
         state = State(
             agents_money=self.endowments,
             contributions=jnp.zeros(self.num_agents, dtype=jnp.int32),
-            step=1
+            payouts=jnp.zeros(self.num_agents, dtype=jnp.float32),
+            step=1,
+            mech=0
             )
         return self.get_obs(state), state
 
@@ -84,8 +93,21 @@ class InvestmentEnv(MultiAgentEnv):
 
         Returns: obs, state, rewards, done, info
         """
+        # Select mechanism for round
+        def vote():
+            """Votes for mechanism
+
+            Returns: mechanism index
+            """
+            votes = jnp.array([actions[i][1] for i in self.agents]).reshape((self.num_agents,))
+            return jnp.argmax(jnp.bincount(votes, length=2))
+
+        mech = jax.lax.cond(state.step % self.num_rounds == 0, vote, lambda: state.mech)
+        v, w = self.mechs[mech]
+
         # Get the actions as array
-        actions = jnp.array([actions[i] for i in self.agents]).reshape((self.num_agents,))
+        actions = jnp.array([actions[i][0] for i in self.agents]).reshape((self.num_agents,))
+        actions = actions % self.endowments
 
         # Common pot
         common_pot = jnp.sum(actions)
@@ -105,22 +127,26 @@ class InvestmentEnv(MultiAgentEnv):
         other_ratios = other_ratios.at[di].set(0)
 
         # Find y
-        y_abs = self.r * (self.w * actions + (1 - self.w) * jnp.mean(other_rewards, axis=1))
-        y_rel = self.r * (common_pot/tot_ratio) * (self.w * ro + (1 - self.w) * jnp.mean(other_ratios, axis=1)) # TODO should these be a mean??
-        y = self.v * y_rel + (1 - self.v) * y_abs
+        y_abs = self.r * (w * actions + (1 - w) * jnp.mean(other_rewards, axis=1))
+        y_rel = self.r * (common_pot/tot_ratio) * (w * ro + (1 - w) * jnp.mean(other_ratios, axis=1)) # TODO should these be a mean??
+        y = v * y_rel + (1 - v) * y_abs
+
+        # Find rewards
+        payouts = y - actions + self.endowments
+        rewards = {a: payouts[i] for a, i in zip(self.agents, range(self.num_agents))}
 
         # Update the environment state
         step = state.step + 1
         state = State(
             agents_money=self.endowments,
             contributions=actions,
-            step=step
+            payouts=payouts,
+            step=step,
+            mech=mech
             )
 
-        # Prepare outputs
+        # Prepare remaining outputs
         obs = self.get_obs(state)
-        rewards = y - actions + self.endowments
-        rewards = {a: rewards[i] for a, i in zip(self.agents, range(self.num_agents))}
         done = self.is_terminal(state)
         dones = {a: done for a in self.agents + ["__all__"]}
         info = {}
@@ -133,7 +159,9 @@ class InvestmentEnv(MultiAgentEnv):
 
         Returns: obs
         """
-        obs = jnp.concatenate((state.agents_money, state.contributions)).astype(jnp.int32)
+        obs = jnp.concatenate(
+            (state.agents_money, state.contributions, state.payouts)
+            ).astype(jnp.int32)
 
         return {a: obs for a in self.agents}
 
@@ -142,7 +170,7 @@ class InvestmentEnv(MultiAgentEnv):
 
         Returns: is_terminal
         """
-        is_terminal = state.step > self.num_rounds
+        is_terminal = state.step > (self.num_rounds * self.num_games)
 
         return is_terminal
 
@@ -154,6 +182,8 @@ class InvestmentEnv(MultiAgentEnv):
         print(f"\nCurrent step: {state.step}")
         print(f"Agents' money: {state.agents_money}")
         print(f"Contributions: {state.contributions}")
+        print(f"Payouts: {state.payouts}")
+        print(f"Mechanism: {state.mech}")
 
 
     @property
