@@ -13,15 +13,17 @@ from flax.training.train_state import TrainState
 import distrax
 import hydra
 from omegaconf import OmegaConf
+from decimal import Decimal
 
 import jaxmarl
 from jaxmarl.wrappers.baselines import MPELogWrapper
-from jaxmarl.environments.investment import InvestmentEnv
+from jaxmarl.environments.investment import VoteEnv
 
 import wandb
 import functools
 
 import matplotlib.pyplot as plt
+from collections import Counter
 
 
 class ScannedRNN(nn.Module):
@@ -73,7 +75,7 @@ class ActorCriticRNN(nn.Module):
         actor_mean = nn.relu(actor_mean)
         actor_mean = nn.Dense(
             self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(actor_mean)    
+        )(actor_mean)        
 
         pi = distrax.Categorical(logits=actor_mean)
 
@@ -98,12 +100,21 @@ class Transition(NamedTuple):
     obs: jnp.ndarray
     info: jnp.ndarray
 
-def get_rollout(runner_state, config):
+def format_e(n):
+    a = '%E' % n
+    return a.split('E')[0].rstrip('0').rstrip('.') + 'E' + a.split('E')[1]
+
+def get_rollout(runner_state, config, tail, mech):
     """Get rollout with specific train state
 
     Returns: state_seq
     """
-    env = InvestmentEnv(tail=config["tail"], v=config["v"], w=config["w"])
+    env = VoteEnv(
+        num_rounds=config["num_rounds"],
+        num_games=config["num_games"],
+        tail=tail,
+        mechs=mech
+        )
 
     # Action space uniform for all agents
     network = ActorCriticRNN(env.action_space(env.agents[0]).n, config=config)
@@ -156,7 +167,7 @@ def get_rollout(runner_state, config):
 
     return state_seq
 
-def plot_contributions(states, config):
+def plot_contributions(states, config, tail, mech):
     """Plots contributions
 
     Returns: N/A
@@ -183,11 +194,50 @@ def plot_contributions(states, config):
     plt.plot(range(1,len(avg_contributions)+1), avg_contributions, label='Tail')
     plt.xlabel('Step')
     plt.ylabel('Relative Contribution')
-    plt.title(f"{config['experiment_name']} with tail contribution {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}")
+    plt.title(f"({mech[0][0]}, {mech[0][1]}); ({mech[1][0]}, {mech[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
     plt.legend()
 
     # Save plot
-    plt.savefig(f"results/rnn/strategy/{config['experiment_name']}_{config['tail']}.png")
+    plt.savefig(f"results/rnn/strategy/{config['experiment_name']}_{mech[0][0]},{mech[0][1]};{mech[1][0]},{mech[1][1]}_{tail}.png")
+
+
+def plot_mechs(states, config, tail, mech):
+    """Plots mechs
+
+    Returns: N/A
+    """
+    # Extract game played for each round
+    mechs = [state.mech[0].item() for state in states]
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1,len(mechs)+1), mechs, label='Mechanism')
+    plt.xlabel('Step')
+    plt.ylabel('Mechanism')
+    plt.title(f"({mech[0][0]}, {mech[0][1]}); ({mech[1][0]}, {mech[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
+    plt.legend()
+
+    # Save plot
+    plt.savefig(f"results/rnn/mech/{config['experiment_name']}_{mech[0][0]},{mech[0][1]};{mech[1][0]},{mech[1][1]}_{tail}.png")
+
+    # Count occurrences of each element
+    counts = Counter(mechs)
+    # Get the most common element
+    most_common_element = counts.most_common(1)[0][0]
+    return most_common_element
+
+def plot_returns(mean_returns, config, tail, mech):
+    """Plots returns
+
+    Returns: N/A
+    """
+    x = np.arange(len(mean_returns)) * config["NUM_ACTORS"]
+    plt.figure(figsize=(10, 6))
+    plt.plot(x, mean_returns)
+    plt.xlabel("Timestep")
+    plt.ylabel("Return")
+    plt.title(f"({mech[0][0]}, {mech[0][1]}); ({mech[1][0]}, {mech[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
+    plt.savefig(f"results/rnn/train/{config['experiment_name']}_{mech[0][0]},{mech[0][1]};{mech[1][0]},{mech[1][1]}_{tail}.png")
+
 
 
 def batchify(x: dict, agent_list, num_actors):
@@ -200,9 +250,14 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
     return {a: x[i] for i, a in enumerate(agent_list)}
 
 
-def make_train(config):
+def make_train(config, tail, mech):
     # env = jaxmarl.make(config["ENV_NAME"])
-    env = InvestmentEnv(tail=config["tail"], v=config["v"], w=config["w"])
+    env = VoteEnv(
+        num_rounds=config["num_rounds"],
+        num_games=config["num_games"],
+        tail=tail,
+        mechs=mech
+        )
     
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
@@ -510,7 +565,7 @@ def make_train(config):
     return train
 
 
-@hydra.main(version_base=None, config_path="config", config_name="ippo_rnn_investment")
+@hydra.main(version_base=None, config_path="config", config_name="ippo_rnn_pit")
 def main(config):
     config = OmegaConf.to_container(config)
     wandb.init(
@@ -520,38 +575,52 @@ def main(config):
         config=config,
         mode=config["WANDB_MODE"]
     )
-    rng = jax.random.PRNGKey(config["SEED"])
-    train_jit = jax.jit(make_train(config), device=jax.devices()[0])
-    out = train_jit(rng)
 
-    """updates_x = jnp.arange(out["metrics"]["total_loss"][0].shape[0])
-    loss_table = jnp.stack([updates_x, out["metrics"]["total_loss"].mean(axis=0), out["metrics"]["actor_loss"].mean(axis=0), out["metrics"]["critic_loss"].mean(axis=0), out["metrics"]["entropy"].mean(axis=0), out["metrics"]["ratio"].mean(axis=0)], axis=1)    
-    loss_table = wandb.Table(data=loss_table.tolist(), columns=["updates", "total_loss", "actor_loss", "critic_loss", "entropy", "ratio"])
-    print('shape', out["metrics"]["returned_episode_returns"][0].shape)
-    updates_x = jnp.arange(out["metrics"]["returned_episode_returns"][0].shape[0])
-    returns_table = jnp.stack([updates_x, out["metrics"]["returned_episode_returns"].mean(axis=0)], axis=1)
-    returns_table = wandb.Table(data=returns_table.tolist(), columns=["updates", "returns"])
-    wandb.log({
-        "returns_plot": wandb.plot.line(returns_table, "updates", "returns", title="returns_vs_updates"),
-        "returns": out["metrics"]["returned_episode_returns"][:,-1].mean(),
-        "total_loss_plot": wandb.plot.line(loss_table, "updates", "total_loss", title="total_loss_vs_updates"),
-        "actor_loss_plot": wandb.plot.line(loss_table, "updates", "actor_loss", title="actor_loss_vs_updates"),
-        "critic_loss_plot": wandb.plot.line(loss_table, "updates", "critic_loss", title="critic_loss_vs_updates"),
-        "entropy_plot": wandb.plot.line(loss_table, "updates", "entropy", title="entropy_vs_updates"),
-        "ratio_plot": wandb.plot.line(loss_table, "updates", "ratio", title="ratio_vs_updates"),
-    })"""
+    mechs = [(i, j) for i in [0.0, 0.5, 1.0] for j in [0.0, 0.5, 1.0]]
+    tails = [2, 4, 6, 8, 10]
+    scores_matrix = np.zeros((len(mechs), len(mechs)), dtype=float)
 
-    mean_returns = out["metrics"]["returned_episode_returns"].mean(-1).reshape(-1)
-    x = np.arange(len(mean_returns)) * config["NUM_ACTORS"]
-    plt.plot(x, mean_returns)
-    plt.xlabel("Timestep")
-    plt.ylabel("Return")
-    plt.title(f"{config['experiment_name']} with tail contribution {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}")
-    plt.savefig(f"results/rnn/train/{config['experiment_name']}_{config['tail']}.png")
+    for idx_0, (v_0, w_0) in enumerate(mechs):
+        for idx_1, (v_1, w_1) in enumerate(mechs):
+            mech = jnp.array([(v_0, w_0), (v_1, w_1)])
+            scores = np.zeros(2, dtype=float)
 
-    runner_state, _ = out["runner_state"]
-    state_seq = get_rollout(runner_state, config)
-    plot_contributions(state_seq, config)
+            for tail in tails:
+                print(f"v_0, w_0: {v_0}, {w_0};\tv_1, w_1: {v_1}, {w_1};\ttail: {tail}")
+
+                rng = jax.random.PRNGKey(config["SEED"])
+                train_jit = jax.jit(make_train(config, tail, mech), device=jax.devices()[0])
+                out = train_jit(rng)
+
+                mean_returns = out["metrics"]["returned_episode_returns"].mean(-1).reshape(-1)
+                plot_returns(mean_returns, config, tail, mech)
+
+                runner_state, _ = out["runner_state"]
+                state_seq = get_rollout(runner_state, config, tail, mech)
+                plot_contributions(state_seq, config, tail, mech)
+
+                winner = plot_mechs(state_seq, config, tail, mech)
+                scores[winner] += 1.0
+
+            scores_matrix[idx_0, idx_1] = scores[0] / (scores[0] + scores[1])
+
+    # Plotting and saving scores matrix as an image with numerical values
+    plt.figure(figsize=(8, 6))
+    plt.imshow(scores_matrix, cmap='viridis', interpolation='nearest')
+    plt.colorbar(label='Scores')
+    plt.xticks(np.arange(len(mechs)), [(f"{v_1}, {w_1}") for v_1, w_1 in mechs], rotation=45)
+    plt.yticks(np.arange(len(mechs)), [(f"{v_0}, {w_0}") for v_0, w_0 in mechs])
+    plt.xlabel("(v_1, w_1)")
+    plt.ylabel("(v_0, w_0)")
+    plt.title("Scores Matrix")
+
+    # Adding numerical values in each cell
+    for i in range(len(mechs)):
+        for j in range(len(mechs)):
+            plt.text(j, i, str(scores_matrix[i, j]), ha='center', va='center', color='white')
+
+    plt.tight_layout()
+    plt.savefig("results/rnn/scores_matrix.png")
 
 
 if __name__ == "__main__":

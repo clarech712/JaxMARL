@@ -22,4 +22,5 @@ from .hanabi import HanabiGame
 from .storm import InTheGrid, InTheGrid_2p
 from .coin_game import CoinGame
 from .investment import InvestmentEnv
+from .investment import VoteEnv
 

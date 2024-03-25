@@ -14,7 +14,7 @@ from flax.training.train_state import TrainState
 import distrax
 import jaxmarl
 from jaxmarl.wrappers.baselines import LogWrapper
-from jaxmarl.environments.investment import InvestmentEnv
+from jaxmarl.environments.investment import VoteEnv
 import matplotlib.pyplot as plt
 import hydra
 from omegaconf import OmegaConf
@@ -72,7 +72,12 @@ def get_rollout(train_state, config):
 
     Returns: state_seq
     """
-    env = InvestmentEnv(tail=config["tail"], v=config["v"], w=config["w"])
+    env = VoteEnv(
+        num_rounds=config["num_rounds"],
+        num_games=config["num_games"],
+        tail=config["tail"],
+        mechs=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
+        )
 
     # Action space uniform for all agents
     network = ActorCritic(env.action_space("agent_0").n, activation=config["ACTIVATION"])
@@ -143,11 +148,24 @@ def plot_contributions(states, config):
     plt.plot(range(1,len(avg_contributions)+1), avg_contributions, label='Tail')
     plt.xlabel('Step')
     plt.ylabel('Relative Contribution')
-    plt.title(f"{config['experiment_name']} with tail contribution {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}")
+    plt.title(f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}; {config['num_games']} of {config['num_rounds']} rounds")
     plt.legend()
 
     # Save plot
     plt.savefig(f"results/ff/strategy/{config['experiment_name']}_{config['tail']}.png")
+
+    # Extract game played for each round
+    mechs = [state.mech for state in states]
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1,len(mechs)+1), mechs, label='Mechanism')
+    plt.xlabel('Step')
+    plt.ylabel('Mechanism')
+    plt.title(f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}; {config['num_games']} of {config['num_rounds']} rounds")
+    plt.legend()
+
+    # Save plot
+    plt.savefig(f"results/ff/mech/{config['experiment_name']}_{config['tail']}.png")
 
 def batchify(x: dict, agent_list, num_actors):
     max_dim = max([x[a].shape[-1] for a in agent_list])
@@ -163,7 +181,12 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
 
 def make_train(config):
     # env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
-    env = InvestmentEnv(tail=config["tail"], v=config["v"], w=config["w"])
+    env = VoteEnv(
+        num_rounds=config["num_rounds"],
+        num_games=config["num_games"],
+        tail=config["tail"],
+        mechs=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
+        )
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ACTORS"]  
@@ -371,7 +394,7 @@ def make_train(config):
     return train
 
 
-@hydra.main(version_base=None, config_path="config", config_name="ippo_ff_investment")
+@hydra.main(version_base=None, config_path="config", config_name="ippo_ff_vote")
 def main(config): 
 
     config = OmegaConf.to_container(config) 
@@ -401,7 +424,7 @@ def main(config):
     plt.plot(x, mean_returns)
     plt.xlabel("Timestep")
     plt.ylabel("Return")
-    plt.title(f"{config['experiment_name']} with tail contribution {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}")
+    plt.title(f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}; {config['num_games']} of {config['num_rounds']} rounds")
     plt.savefig(f"results/ff/train/{config['experiment_name']}_{config['tail']}.png")
 
     train_state = out["runner_state"][0]
