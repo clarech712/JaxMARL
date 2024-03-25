@@ -13,10 +13,11 @@ from flax.training.train_state import TrainState
 import distrax
 import hydra
 from omegaconf import OmegaConf
+from decimal import Decimal
 
 import jaxmarl
 from jaxmarl.wrappers.baselines import MPELogWrapper
-from jaxmarl.environments.investment import InvestmentEnv
+from jaxmarl.environments.investment import VoteEnv
 
 import wandb
 import functools
@@ -73,7 +74,7 @@ class ActorCriticRNN(nn.Module):
         actor_mean = nn.relu(actor_mean)
         actor_mean = nn.Dense(
             self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(actor_mean)    
+        )(actor_mean)        
 
         pi = distrax.Categorical(logits=actor_mean)
 
@@ -98,12 +99,21 @@ class Transition(NamedTuple):
     obs: jnp.ndarray
     info: jnp.ndarray
 
+def format_e(n):
+    a = '%E' % n
+    return a.split('E')[0].rstrip('0').rstrip('.') + 'E' + a.split('E')[1]
+
 def get_rollout(runner_state, config):
     """Get rollout with specific train state
 
     Returns: state_seq
     """
-    env = InvestmentEnv(tail=config["tail"], v=config["v"], w=config["w"])
+    env = VoteEnv(
+        num_rounds=config["num_rounds"],
+        num_games=config["num_games"],
+        tail=config["tail"],
+        mechs=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
+        )
 
     # Action space uniform for all agents
     network = ActorCriticRNN(env.action_space(env.agents[0]).n, config=config)
@@ -183,11 +193,25 @@ def plot_contributions(states, config):
     plt.plot(range(1,len(avg_contributions)+1), avg_contributions, label='Tail')
     plt.xlabel('Step')
     plt.ylabel('Relative Contribution')
-    plt.title(f"{config['experiment_name']} with tail contribution {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}")
+    plt.title(f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
     plt.legend()
 
     # Save plot
     plt.savefig(f"results/rnn/strategy/{config['experiment_name']}_{config['tail']}.png")
+
+    # Extract game played for each round
+    mechs = [state.mech[0] for state in states]
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1,len(mechs)+1), mechs, label='Mechanism')
+    plt.xlabel('Step')
+    plt.ylabel('Mechanism')
+    plt.title(f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
+    plt.legend()
+
+    # Save plot
+    plt.savefig(f"results/rnn/mech/{config['experiment_name']}_{config['tail']}.png")
+
 
 
 def batchify(x: dict, agent_list, num_actors):
@@ -202,7 +226,12 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
 
 def make_train(config):
     # env = jaxmarl.make(config["ENV_NAME"])
-    env = InvestmentEnv(tail=config["tail"], v=config["v"], w=config["w"])
+    env = VoteEnv(
+        num_rounds=config["num_rounds"],
+        num_games=config["num_games"],
+        tail=config["tail"],
+        mechs=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
+        )
     
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
@@ -510,7 +539,7 @@ def make_train(config):
     return train
 
 
-@hydra.main(version_base=None, config_path="config", config_name="ippo_rnn_investment")
+@hydra.main(version_base=None, config_path="config", config_name="ippo_rnn_vote")
 def main(config):
     config = OmegaConf.to_container(config)
     wandb.init(
@@ -546,7 +575,7 @@ def main(config):
     plt.plot(x, mean_returns)
     plt.xlabel("Timestep")
     plt.ylabel("Return")
-    plt.title(f"{config['experiment_name']} with tail contribution {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}")
+    plt.title(f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
     plt.savefig(f"results/rnn/train/{config['experiment_name']}_{config['tail']}.png")
 
     runner_state, _ = out["runner_state"]
