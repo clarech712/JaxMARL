@@ -1,8 +1,8 @@
 "ENV_NAME": "investment"
 "LR": 5e-4
-"NUM_ENVS": 2
+"NUM_ENVS": 8
 "NUM_STEPS": 10
-"TOTAL_TIMESTEPS": 1e3
+"TOTAL_TIMESTEPS": 1e5
 "UPDATE_EPOCHS": 4
 "NUM_MINIBATCHES": 2
 "GAMMA": 0.99
@@ -24,5 +24,5 @@
 # Investment params
 "v": 1
 "w": 1
-"tail": 10
+"tail": 2
 "experiment_name": "liberal_egalitarian"

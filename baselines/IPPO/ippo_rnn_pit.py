@@ -14,6 +14,7 @@ import distrax
 import hydra
 from omegaconf import OmegaConf
 from decimal import Decimal
+import csv
 
 import jaxmarl
 from jaxmarl.wrappers.baselines import MPELogWrapper
@@ -224,6 +225,7 @@ def plot_mechs(states, config, tail, mech):
     # Get the most common element
     most_common_element = counts.most_common(1)[0][0]
     return most_common_element
+
 
 def plot_returns(mean_returns, config, tail, mech):
     """Plots returns
@@ -580,29 +582,33 @@ def main(config):
     tails = [2, 4, 6, 8, 10]
     scores_matrix = np.zeros((len(mechs), len(mechs)), dtype=float)
 
-    for idx_0, (v_0, w_0) in enumerate(mechs):
-        for idx_1, (v_1, w_1) in enumerate(mechs):
+    for idx_0, (v_0, w_0) in enumerate(mechs[3:]):
+        for idx_1, (v_1, w_1) in enumerate(mechs[6:]):
             mech = jnp.array([(v_0, w_0), (v_1, w_1)])
             scores = np.zeros(2, dtype=float)
 
-            for tail in tails:
-                print(f"v_0, w_0: {v_0}, {w_0};\tv_1, w_1: {v_1}, {w_1};\ttail: {tail}")
+            with open('results/rnn/scores.csv', mode='a', newline='', encoding='utf-8') as file:
+                writer = csv.writer(file)
 
-                rng = jax.random.PRNGKey(config["SEED"])
-                train_jit = jax.jit(make_train(config, tail, mech), device=jax.devices()[0])
-                out = train_jit(rng)
+                for tail in tails:
+                    print(f"v_0, w_0: {v_0}, {w_0};\tv_1, w_1: {v_1}, {w_1};\ttail: {tail}")
 
-                mean_returns = out["metrics"]["returned_episode_returns"].mean(-1).reshape(-1)
-                plot_returns(mean_returns, config, tail, mech)
+                    rng = jax.random.PRNGKey(config["SEED"])
+                    train_jit = jax.jit(make_train(config, tail, mech), device=jax.devices()[0])
+                    out = train_jit(rng)
 
-                runner_state, _ = out["runner_state"]
-                state_seq = get_rollout(runner_state, config, tail, mech)
-                plot_contributions(state_seq, config, tail, mech)
+                    mean_returns = out["metrics"]["returned_episode_returns"].mean(-1).reshape(-1)
+                    plot_returns(mean_returns, config, tail, mech)
 
-                winner = plot_mechs(state_seq, config, tail, mech)
-                scores[winner] += 1.0
+                    runner_state, _ = out["runner_state"]
+                    state_seq = get_rollout(runner_state, config, tail, mech)
+                    plot_contributions(state_seq, config, tail, mech)
 
-            scores_matrix[idx_0, idx_1] = scores[0] / (scores[0] + scores[1])
+                    winner = plot_mechs(state_seq, config, tail, mech)
+                    scores[winner] += 1.0
+
+                writer.writerow([v_0, w_0, v_1, w_1, scores[0], scores[1]])
+                scores_matrix[idx_0, idx_1] = scores[0] / (scores[0] + scores[1])
 
     # Plotting and saving scores matrix as an image with numerical values
     plt.figure(figsize=(8, 6))

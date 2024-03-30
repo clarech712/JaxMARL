@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import chex
 from flax import struct
 from jaxmarl.environments.multi_agent_env import MultiAgentEnv
-from jaxmarl.environments.spaces import Discrete, Box
+from jaxmarl.environments.spaces import Discrete, MultiDiscrete
 
 
 @struct.dataclass
@@ -56,13 +56,13 @@ class VoteEnv(MultiAgentEnv):
         self.endowments = self.endowments.at[head].set(10)
 
         # Action spaces
-        self.action_spaces = {a: Discrete(20) for a, e in zip(self.agents, self.endowments)}
+        self.action_spaces = {a: Discrete(22) for a, e in zip(self.agents, self.endowments)}
 
         # Observation spaces
         self.observation_spaces = {
-            a: Box(low=0, high=10, shape=(3 * self.num_agents,), dtype=jnp.int32)
+            a: MultiDiscrete([10] * (3 * self.num_agents))
             for a in self.agents
-        }
+            }
 
         # Manifold
         self.mechs = mechs
@@ -95,14 +95,14 @@ class VoteEnv(MultiAgentEnv):
 
             Returns: mechanism index
             """
-            votes = jnp.array([actions[i] // 10 for i in self.agents]).reshape((self.num_agents,))
+            votes = jnp.array([actions[i] // 11 for i in self.agents]).reshape((self.num_agents,))
             return jnp.argmax(jnp.bincount(votes, length=2))
 
         mech = jax.lax.cond(state.step % self.num_rounds == 0, vote, lambda: state.mech)
         v, w = self.mechs[mech]
 
         # Get the actions as array
-        actions = jnp.array([actions[i] % 10 + 1 for i in self.agents]).reshape((self.num_agents,))
+        actions = jnp.array([actions[i] % 11 for i in self.agents]).reshape((self.num_agents,))
         actions = actions % (self.endowments + 1)
 
         # Common pot

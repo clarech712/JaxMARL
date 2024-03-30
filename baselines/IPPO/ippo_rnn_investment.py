@@ -13,6 +13,7 @@ from flax.training.train_state import TrainState
 import distrax
 import hydra
 from omegaconf import OmegaConf
+from decimal import Decimal
 
 import jaxmarl
 from jaxmarl.wrappers.baselines import MPELogWrapper
@@ -98,6 +99,12 @@ class Transition(NamedTuple):
     obs: jnp.ndarray
     info: jnp.ndarray
 
+
+def format_e(n):
+    a = '%E' % n
+    return a.split('E')[0].rstrip('0').rstrip('.') + 'E' + a.split('E')[1]
+
+
 def get_rollout(runner_state, config):
     """Get rollout with specific train state
 
@@ -181,13 +188,40 @@ def plot_contributions(states, config):
     plt.figure(figsize=(10, 6))
     plt.plot(range(1,len(head_contributions)+1), head_contributions, label='Head')
     plt.plot(range(1,len(avg_contributions)+1), avg_contributions, label='Tail')
-    plt.xlabel('Step')
-    plt.ylabel('Relative Contribution')
-    plt.title(f"{config['experiment_name']} with tail contribution {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}")
+    plt.xlabel('Round')
+    plt.ylabel('Relative contribution')
+
+    total_timesteps = format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))
+    title = (
+        "Relative contribution per round of gameplay after training (1 game)\n" +
+        f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {total_timesteps}"
+    )
+    plt.title(title)
     plt.legend()
 
     # Save plot
     plt.savefig(f"results/rnn/strategy/{config['experiment_name']}_{config['tail']}.png")
+
+
+def plot_returns(mean_returns, config):
+    """Plots returns
+
+    Returns: N/A
+    """
+    x = np.arange(len(mean_returns))
+    plt.figure(figsize=(10, 6))
+    plt.plot(x, mean_returns)
+    plt.xlabel("Round")
+    plt.ylabel("Average return")
+
+    total_timesteps = format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))
+    title = (
+        "Average return across agents per training round\n" +
+        f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {total_timesteps}"
+    )
+    plt.title(title)
+
+    plt.savefig(f"results/rnn/train/{config['experiment_name']}_{config['tail']}.png")
 
 
 def batchify(x: dict, agent_list, num_actors):
@@ -524,30 +558,8 @@ def main(config):
     train_jit = jax.jit(make_train(config), device=jax.devices()[0])
     out = train_jit(rng)
 
-    """updates_x = jnp.arange(out["metrics"]["total_loss"][0].shape[0])
-    loss_table = jnp.stack([updates_x, out["metrics"]["total_loss"].mean(axis=0), out["metrics"]["actor_loss"].mean(axis=0), out["metrics"]["critic_loss"].mean(axis=0), out["metrics"]["entropy"].mean(axis=0), out["metrics"]["ratio"].mean(axis=0)], axis=1)    
-    loss_table = wandb.Table(data=loss_table.tolist(), columns=["updates", "total_loss", "actor_loss", "critic_loss", "entropy", "ratio"])
-    print('shape', out["metrics"]["returned_episode_returns"][0].shape)
-    updates_x = jnp.arange(out["metrics"]["returned_episode_returns"][0].shape[0])
-    returns_table = jnp.stack([updates_x, out["metrics"]["returned_episode_returns"].mean(axis=0)], axis=1)
-    returns_table = wandb.Table(data=returns_table.tolist(), columns=["updates", "returns"])
-    wandb.log({
-        "returns_plot": wandb.plot.line(returns_table, "updates", "returns", title="returns_vs_updates"),
-        "returns": out["metrics"]["returned_episode_returns"][:,-1].mean(),
-        "total_loss_plot": wandb.plot.line(loss_table, "updates", "total_loss", title="total_loss_vs_updates"),
-        "actor_loss_plot": wandb.plot.line(loss_table, "updates", "actor_loss", title="actor_loss_vs_updates"),
-        "critic_loss_plot": wandb.plot.line(loss_table, "updates", "critic_loss", title="critic_loss_vs_updates"),
-        "entropy_plot": wandb.plot.line(loss_table, "updates", "entropy", title="entropy_vs_updates"),
-        "ratio_plot": wandb.plot.line(loss_table, "updates", "ratio", title="ratio_vs_updates"),
-    })"""
-
     mean_returns = out["metrics"]["returned_episode_returns"].mean(-1).reshape(-1)
-    x = np.arange(len(mean_returns)) * config["NUM_ACTORS"]
-    plt.plot(x, mean_returns)
-    plt.xlabel("Timestep")
-    plt.ylabel("Return")
-    plt.title(f"{config['experiment_name']} with tail contribution {config['tail']}; seed {config['SEED']}; timesteps {config['TOTAL_TIMESTEPS']}")
-    plt.savefig(f"results/rnn/train/{config['experiment_name']}_{config['tail']}.png")
+    plot_returns(mean_returns, config)
 
     runner_state, _ = out["runner_state"]
     state_seq = get_rollout(runner_state, config)
