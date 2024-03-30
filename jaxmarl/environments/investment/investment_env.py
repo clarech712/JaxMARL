@@ -151,7 +151,7 @@ class InvestmentEnv(MultiAgentEnv):
 
         Returns: is_terminal
         """
-        is_terminal = state.step > self.num_rounds
+        is_terminal = state.step > self.num_rounds + 1
 
         return is_terminal
 
