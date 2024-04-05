@@ -35,7 +35,7 @@ class VoteEnv(MultiAgentEnv):
             num_games=100,
             tail=2,
             seed=0,
-            mechs=jnp.array([(1, 1), (0, 1)])
+            mech_pair=jnp.array([(1, 1), (0, 1)])
             ):
         super().__init__(num_agents=4)
         key = jax.random.PRNGKey(seed)
@@ -65,7 +65,7 @@ class VoteEnv(MultiAgentEnv):
             }
 
         # Manifold
-        self.mechs = mechs
+        self.mech_pair = mech_pair
         self.r = 1.6
 
     @partial(jax.jit, static_argnums=[0])
@@ -99,7 +99,7 @@ class VoteEnv(MultiAgentEnv):
             return jnp.argmax(jnp.bincount(votes, length=2))
 
         mech = jax.lax.cond(state.step % self.num_rounds == 0, vote, lambda: state.mech)
-        v, w = self.mechs[mech]
+        v, w = self.mech_pair[mech]
 
         # Get the actions as array
         actions = jnp.array([actions[i] % 11 for i in self.agents]).reshape((self.num_agents,))

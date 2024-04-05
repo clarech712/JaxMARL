@@ -25,6 +25,7 @@ import functools
 
 import matplotlib.pyplot as plt
 from collections import Counter
+import time
 
 
 class ScannedRNN(nn.Module):
@@ -105,7 +106,7 @@ def format_e(n):
     a = '%E' % n
     return a.split('E')[0].rstrip('0').rstrip('.') + 'E' + a.split('E')[1]
 
-def get_rollout(runner_state, config, tail, mech):
+def get_rollout(runner_state, config, tail, mech_pair):
     """Get rollout with specific train state
 
     Returns: state_seq
@@ -114,7 +115,7 @@ def get_rollout(runner_state, config, tail, mech):
         num_rounds=config["num_rounds"],
         num_games=config["num_games"],
         tail=tail,
-        mechs=mech
+        mech_pair=mech_pair
         )
 
     # Action space uniform for all agents
@@ -168,7 +169,7 @@ def get_rollout(runner_state, config, tail, mech):
 
     return state_seq
 
-def plot_contributions(states, config, tail, mech):
+def plot_contributions(states, config, tail, mech_pair):
     """Plots contributions
 
     Returns: N/A
@@ -195,14 +196,14 @@ def plot_contributions(states, config, tail, mech):
     plt.plot(range(1,len(avg_contributions)+1), avg_contributions, label='Tail')
     plt.xlabel('Step')
     plt.ylabel('Relative Contribution')
-    plt.title(f"({mech[0][0]}, {mech[0][1]}); ({mech[1][0]}, {mech[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
+    plt.title(f"({mech_pair[0][0]}, {mech_pair[0][1]}); ({mech_pair[1][0]}, {mech_pair[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
     plt.legend()
 
     # Save plot
-    plt.savefig(f"results/rnn/strategy/{config['experiment_name']}_{mech[0][0]},{mech[0][1]};{mech[1][0]},{mech[1][1]}_{tail}.png")
+    plt.savefig(f"results/rnn/strategy/{config['experiment_name']}_{mech_pair[0][0]},{mech_pair[0][1]};{mech_pair[1][0]},{mech_pair[1][1]}_{tail}.png")
 
 
-def plot_mechs(states, config, tail, mech):
+def plot_mechs(states, config, tail, mech_pair):
     """Plots mechs
 
     Returns: N/A
@@ -214,31 +215,29 @@ def plot_mechs(states, config, tail, mech):
     plt.plot(range(1,len(mechs)+1), mechs, label='Mechanism')
     plt.xlabel('Step')
     plt.ylabel('Mechanism')
-    plt.title(f"({mech[0][0]}, {mech[0][1]}); ({mech[1][0]}, {mech[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
+    plt.title(f"({mech_pair[0][0]}, {mech_pair[0][1]}); ({mech_pair[1][0]}, {mech_pair[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
     plt.legend()
 
     # Save plot
-    plt.savefig(f"results/rnn/mech/{config['experiment_name']}_{mech[0][0]},{mech[0][1]};{mech[1][0]},{mech[1][1]}_{tail}.png")
+    plt.savefig(f"results/rnn/mech/{config['experiment_name']}_{mech_pair[0][0]},{mech_pair[0][1]};{mech_pair[1][0]},{mech_pair[1][1]}_{tail}.png")
 
     # Count occurrences of each element
     counts = Counter(mechs)
-    # Get the most common element
-    most_common_element = counts.most_common(1)[0][0]
-    return most_common_element
+    return counts[0]
 
 
-def plot_returns(mean_returns, config, tail, mech):
+def plot_returns(mean_returns, config, tail, mech_pair):
     """Plots returns
 
     Returns: N/A
     """
-    x = np.arange(len(mean_returns)) * config["NUM_ACTORS"]
+    x = np.arange(len(mean_returns))
     plt.figure(figsize=(10, 6))
     plt.plot(x, mean_returns)
     plt.xlabel("Timestep")
     plt.ylabel("Return")
-    plt.title(f"({mech[0][0]}, {mech[0][1]}); ({mech[1][0]}, {mech[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
-    plt.savefig(f"results/rnn/train/{config['experiment_name']}_{mech[0][0]},{mech[0][1]};{mech[1][0]},{mech[1][1]}_{tail}.png")
+    plt.title(f"({mech_pair[0][0]}, {mech_pair[0][1]}); ({mech_pair[1][0]}, {mech_pair[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
+    plt.savefig(f"results/rnn/train/{config['experiment_name']}_{mech_pair[0][0]},{mech_pair[0][1]};{mech_pair[1][0]},{mech_pair[1][1]}_{tail}.png")
 
 
 
@@ -252,13 +251,13 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
     return {a: x[i] for i, a in enumerate(agent_list)}
 
 
-def make_train(config, tail, mech):
+def make_train(config, tail, mech_pair):
     # env = jaxmarl.make(config["ENV_NAME"])
     env = VoteEnv(
         num_rounds=config["num_rounds"],
         num_games=config["num_games"],
         tail=tail,
-        mechs=mech
+        mech_pair=mech_pair
         )
     
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
@@ -567,6 +566,100 @@ def make_train(config, tail, mech):
     return train
 
 
+def get_score(mech, rival_mechs, tails, config):
+    """Meta-objective
+
+    Returns: total number of votes against rival mechanisms
+    """
+    def process_rival(rival_mech):
+        def process_tail(tail):
+            mech_pair = jnp.array([mech, rival_mech])
+
+            rng = jax.random.PRNGKey(config["SEED"])
+            train_jit = jax.jit(make_train(config, tail, mech_pair), device=jax.devices()[0])
+            out = train_jit(rng)
+
+            runner_state, _ = out["runner_state"]
+            state_seq = get_rollout(runner_state, config, tail, jnp.array([mech, rival_mech]))
+
+            mechs = [state.mech[0] for state in state_seq]
+            counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
+            return counts
+
+        return jax.vmap(process_tail)(jnp.array(tails))
+
+    counts = jax.vmap(process_rival)(jnp.array(rival_mechs))
+    return jnp.sum(counts)
+
+
+def mutate(mech, key, mutation_rate=0.1):
+    """Mutates the parameters of mech
+    
+    Returns: mutated_mech
+    """
+    v, w = mech
+    v_key, w_key = jax.random.split(key, 2)
+
+    # Randomly decide whether to mutate each parameter
+    v_mutate = jax.random.bernoulli(key, mutation_rate)
+    w_mutate = jax.random.bernoulli(key, mutation_rate)
+
+    # Add random noise to the parameters if they are mutated
+    v = v + jax.random.normal(v_key, ()) * v_mutate
+    w = w + jax.random.normal(w_key, ()) * w_mutate
+
+    # Clip the parameters to ensure they stay within the range [0, 1]
+    v = jnp.clip(v, 0, 1)
+    w = jnp.clip(w, 0, 1)
+
+    mutated_mech = (v, w)
+    return mutated_mech
+
+
+# Define the genetic algorithm
+def genetic_algorithm(rival_mechs, tails, config, key, population_size=2, selected_size=2, num_generations=2):
+    """Simple genetic algorithm
+    
+    Returns: best_mech
+    """
+    # Create initial population
+    key, pop_key = jax.random.split(key, 2)
+    initial_population = jax.random.uniform(pop_key, (population_size, 2))
+    print(f"Initial population:\n{initial_population}")
+
+    for _ in range(num_generations):
+        print("********************")
+        # Calculate scores for each individual in the population
+        scores = jnp.array([get_score(mech, rival_mechs, tails, config) for mech in initial_population])
+        print(f"Scores: {scores}")
+
+        # Get the parameters of the individual with the highest score
+        best_idx = jnp.argmax(scores)
+        best_mech = initial_population[best_idx]
+        best_score = scores[best_idx]
+        print(f"Best score: {best_score}")
+
+        # Perform selection based on score
+        selected_indices = jnp.argsort(scores)[-selected_size:]
+        selected_population = initial_population[selected_indices]
+        print(f"Selected population:\n{selected_population}")
+
+        next_generation = []
+        for _ in range(population_size):
+            # Randomly select two parents from the selected population
+            key, par_key, child_key = jax.random.split(key, 3)
+            parent1, parent2 = jax.random.choice(par_key, selected_population, (2,), replace=False)
+
+            # Create a child by combining and mutating the parents' parameters
+            child = mutate((parent1[0], parent2[1]), child_key)
+            next_generation.append(child)
+
+        initial_population = jnp.array(next_generation)
+        print(f"Next generation:\n{initial_population}")
+
+    return best_mech
+
+
 @hydra.main(version_base=None, config_path="config", config_name="ippo_rnn_pit")
 def main(config):
     config = OmegaConf.to_container(config)
@@ -578,55 +671,27 @@ def main(config):
         mode=config["WANDB_MODE"]
     )
 
-    mechs = [(i, j) for i in [0.0, 0.5, 1.0] for j in [0.0, 0.5, 1.0]]
-    tails = [2, 4, 6, 8, 10]
-    scores_matrix = np.zeros((len(mechs), len(mechs)), dtype=float)
+    # rival_mechs = jnp.array([(1.0, 1.0), (0.0, 1.0), (0.0, 0.25)])
+    rival_mechs = jnp.array([(i, j) for i in [0.0, 0.5, 1.0] for j in [0.0, 0.5, 1.0]])
+    # tails = jnp.array([4])
+    tails = jnp.array([2, 4, 6, 8, 10])
+    key = jax.random.PRNGKey(0)
 
-    for idx_0, (v_0, w_0) in enumerate(mechs[3:]):
-        for idx_1, (v_1, w_1) in enumerate(mechs[6:]):
-            mech = jnp.array([(v_0, w_0), (v_1, w_1)])
-            scores = np.zeros(2, dtype=float)
-
-            with open('results/rnn/scores.csv', mode='a', newline='', encoding='utf-8') as file:
-                writer = csv.writer(file)
-
-                for tail in tails:
-                    print(f"v_0, w_0: {v_0}, {w_0};\tv_1, w_1: {v_1}, {w_1};\ttail: {tail}")
-
-                    rng = jax.random.PRNGKey(config["SEED"])
-                    train_jit = jax.jit(make_train(config, tail, mech), device=jax.devices()[0])
-                    out = train_jit(rng)
-
-                    mean_returns = out["metrics"]["returned_episode_returns"].mean(-1).reshape(-1)
-                    plot_returns(mean_returns, config, tail, mech)
-
-                    runner_state, _ = out["runner_state"]
-                    state_seq = get_rollout(runner_state, config, tail, mech)
-                    plot_contributions(state_seq, config, tail, mech)
-
-                    winner = plot_mechs(state_seq, config, tail, mech)
-                    scores[winner] += 1.0
-
-                writer.writerow([v_0, w_0, v_1, w_1, scores[0], scores[1]])
-                scores_matrix[idx_0, idx_1] = scores[0] / (scores[0] + scores[1])
-
-    # Plotting and saving scores matrix as an image with numerical values
-    plt.figure(figsize=(8, 6))
-    plt.imshow(scores_matrix, cmap='viridis', interpolation='nearest')
-    plt.colorbar(label='Scores')
-    plt.xticks(np.arange(len(mechs)), [(f"{v_1}, {w_1}") for v_1, w_1 in mechs], rotation=45)
-    plt.yticks(np.arange(len(mechs)), [(f"{v_0}, {w_0}") for v_0, w_0 in mechs])
-    plt.xlabel("(v_1, w_1)")
-    plt.ylabel("(v_0, w_0)")
-    plt.title("Scores Matrix")
-
-    # Adding numerical values in each cell
-    for i in range(len(mechs)):
-        for j in range(len(mechs)):
-            plt.text(j, i, str(scores_matrix[i, j]), ha='center', va='center', color='white')
-
-    plt.tight_layout()
-    plt.savefig("results/rnn/scores_matrix.png")
+    start_time = time.time()
+    best_mech = genetic_algorithm(
+        rival_mechs,
+        tails,
+        config,
+        key,
+        population_size=5,
+        selected_size=2,
+        num_generations=3
+        )
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    print(f"Best mechanism: {best_mech}")
+    print(f"Time taken: {elapsed_time} seconds")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 "ENV_NAME": "investment"
 "LR": 5e-4
-"NUM_ENVS": 8
+"NUM_ENVS": 2
 "NUM_STEPS": 10
-"TOTAL_TIMESTEPS": 50000
+"TOTAL_TIMESTEPS": 1e6
 "UPDATE_EPOCHS": 4
 "NUM_MINIBATCHES": 2
 "GAMMA": 0.99
@@ -24,9 +24,9 @@
 # Investment params
 "num_rounds": 5
 "num_games": 100
-"v_0": 1
-"w_0": 1
-"v_1": 0
+"v_0": 0.34896135
+"w_0": 0.48210478
+"v_1": 1
 "w_1": 1
-"tail": 2
-"experiment_name": "le_vs_l"
+"tail": 4
+"experiment_name": "sanity"
