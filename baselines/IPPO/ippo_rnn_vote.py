@@ -113,7 +113,7 @@ def get_rollout(runner_state, config):
         num_rounds=config["num_rounds"],
         num_games=config["num_games"],
         tail=config["tail"],
-        mechs=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
+        mech_pair=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
         )
 
     # Action space uniform for all agents
@@ -275,7 +275,7 @@ def make_train(config):
         num_rounds=config["num_rounds"],
         num_games=config["num_games"],
         tail=config["tail"],
-        mechs=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
+        mech_pair=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
         )
     
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
