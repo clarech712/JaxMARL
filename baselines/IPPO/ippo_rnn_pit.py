@@ -671,10 +671,10 @@ def main(config):
         mode=config["WANDB_MODE"]
     )
 
-    # rival_mechs = jnp.array([(1.0, 1.0), (0.0, 1.0), (0.0, 0.25)])
-    rival_mechs = jnp.array([(i, j) for i in [0.0, 0.5, 1.0] for j in [0.0, 0.5, 1.0]])
-    # tails = jnp.array([4])
-    tails = jnp.array([2, 4, 6, 8, 10])
+    rival_mechs = jnp.array([(1.0, 1.0), (0.0, 1.0), (0.0, 0.25)])
+    # rival_mechs = jnp.array([(i, j) for i in [0.0, 0.5, 1.0] for j in [0.0, 0.5, 1.0]])
+    tails = jnp.array([4])
+    # tails = jnp.array([2, 4, 6, 8, 10])
     key = jax.random.PRNGKey(0)
 
     start_time = time.time()
