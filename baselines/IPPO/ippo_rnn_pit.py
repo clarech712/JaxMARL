@@ -671,8 +671,7 @@ def main(config):
         mode=config["WANDB_MODE"]
     )
 
-    tails = jnp.array([4])
-    # tails = jnp.array([2, 4, 6, 8, 10])
+    tails = jnp.array([2, 4, 6, 8, 10])
     key = jax.random.PRNGKey(0)
 
     start_time = time.time()
