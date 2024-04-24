@@ -679,8 +679,8 @@ def main(config):
         tails,
         config,
         key,
-        population_size=5,
-        selected_size=2,
+        population_size=10,
+        selected_size=3,
         num_generations=3
         )
     end_time = time.time()
