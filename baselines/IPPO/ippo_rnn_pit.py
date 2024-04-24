@@ -346,7 +346,7 @@ def make_train(config, tail, mech_pair):
                 obsv, env_state, reward, done, info = jax.vmap(
                     env.step, in_axes=(0, 0, 0)
                 )(rng_step, env_state, env_act)
-                info = jax.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
+                info = jax.tree_util.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
                 done_batch = batchify(done, env.agents, config["NUM_ACTORS"]).squeeze()
                 transition = Transition(
                     jnp.tile(done["__all__"], env.num_agents),
@@ -521,7 +521,7 @@ def make_train(config, tail, mech_pair):
             )
             train_state = update_state[0]
             metric = traj_batch.info
-            metric = jax.tree_map(
+            metric = jax.tree_util.tree_map(
                 lambda x: x.reshape(
                     (config["NUM_STEPS"], config["NUM_ENVS"], env.num_agents)
                 ),
