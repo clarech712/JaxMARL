@@ -617,31 +617,31 @@ def mutate(mech, key, mutation_rate=0.1):
 
 
 # Define the genetic algorithm
-def genetic_algorithm(rival_mechs, tails, config, key, population_size=2, selected_size=2, num_generations=2):
+def genetic_algorithm(tails, config, key, population_size=2, selected_size=2, num_generations=2):
     """Simple genetic algorithm
     
     Returns: best_mech
     """
     # Create initial population
     key, pop_key = jax.random.split(key, 2)
-    initial_population = jax.random.uniform(pop_key, (population_size, 2))
-    print(f"Initial population:\n{initial_population}")
+    current_population = jax.random.uniform(pop_key, (population_size, 2))
+    print(f"Current population:\n{current_population}")
 
     for _ in range(num_generations):
         print("********************")
         # Calculate scores for each individual in the population
-        scores = jnp.array([get_score(mech, rival_mechs, tails, config) for mech in initial_population])
+        scores = jnp.array([get_score(mech, current_population, tails, config) for mech in current_population])
         print(f"Scores: {scores}")
 
         # Get the parameters of the individual with the highest score
         best_idx = jnp.argmax(scores)
-        best_mech = initial_population[best_idx]
+        best_mech = current_population[best_idx]
         best_score = scores[best_idx]
         print(f"Best score: {best_score}")
 
         # Perform selection based on score
         selected_indices = jnp.argsort(scores)[-selected_size:]
-        selected_population = initial_population[selected_indices]
+        selected_population = current_population[selected_indices]
         print(f"Selected population:\n{selected_population}")
 
         next_generation = []
@@ -654,8 +654,8 @@ def genetic_algorithm(rival_mechs, tails, config, key, population_size=2, select
             child = mutate((parent1[0], parent2[1]), child_key)
             next_generation.append(child)
 
-        initial_population = jnp.array(next_generation)
-        print(f"Next generation:\n{initial_population}")
+        current_population = jnp.array(next_generation)
+        print(f"Next generation:\n{current_population}")
 
     return best_mech
 
@@ -671,15 +671,12 @@ def main(config):
         mode=config["WANDB_MODE"]
     )
 
-    rival_mechs = jnp.array([(1.0, 1.0), (0.0, 1.0), (0.0, 0.25)])
-    # rival_mechs = jnp.array([(i, j) for i in [0.0, 0.5, 1.0] for j in [0.0, 0.5, 1.0]])
     tails = jnp.array([4])
     # tails = jnp.array([2, 4, 6, 8, 10])
     key = jax.random.PRNGKey(0)
 
     start_time = time.time()
     best_mech = genetic_algorithm(
-        rival_mechs,
         tails,
         config,
         key,
