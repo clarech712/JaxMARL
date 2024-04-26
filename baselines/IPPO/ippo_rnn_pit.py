@@ -346,7 +346,7 @@ def make_train(config, tail, mech_pair):
                 obsv, env_state, reward, done, info = jax.vmap(
                     env.step, in_axes=(0, 0, 0)
                 )(rng_step, env_state, env_act)
-                info = jax.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
+                info = jax.tree_util.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
                 done_batch = batchify(done, env.agents, config["NUM_ACTORS"]).squeeze()
                 transition = Transition(
                     jnp.tile(done["__all__"], env.num_agents),
@@ -521,7 +521,7 @@ def make_train(config, tail, mech_pair):
             )
             train_state = update_state[0]
             metric = traj_batch.info
-            metric = jax.tree_map(
+            metric = jax.tree_util.tree_map(
                 lambda x: x.reshape(
                     (config["NUM_STEPS"], config["NUM_ENVS"], env.num_agents)
                 ),
@@ -671,8 +671,7 @@ def main(config):
         mode=config["WANDB_MODE"]
     )
 
-    tails = jnp.array([4])
-    # tails = jnp.array([2, 4, 6, 8, 10])
+    tails = jnp.array([2, 4, 6, 8, 10])
     key = jax.random.PRNGKey(0)
 
     start_time = time.time()
@@ -680,8 +679,8 @@ def main(config):
         tails,
         config,
         key,
-        population_size=5,
-        selected_size=2,
+        population_size=10,
+        selected_size=3,
         num_generations=3
         )
     end_time = time.time()
