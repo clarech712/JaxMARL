@@ -681,7 +681,7 @@ def main(config):
         key,
         population_size=10,
         selected_size=3,
-        num_generations=3
+        num_generations=10
         )
     end_time = time.time()
     elapsed_time = end_time - start_time
