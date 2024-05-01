@@ -169,77 +169,6 @@ def get_rollout(runner_state, config, tail, mech_pair):
 
     return state_seq
 
-def plot_contributions(states, config, tail, mech_pair):
-    """Plots contributions
-
-    Returns: N/A
-    """
-    # Extract contributions for each round
-    contributions = [state.contributions[0] for state in states[1:-1]]
-
-    # Separate contributions for head and tail
-    head_idx = np.where(states[0].agents_money[0] == 10)[0][0]
-    tail_idx = (head_idx + 1) % len(states[0].agents_money[0])
-    tail_endowment = states[0].agents_money[0][tail_idx]
-    head_contributions = [(contribution[head_idx] / 10) for contribution in contributions]
-    tail_contributions = [
-        [(contribution[i] / tail_endowment) for contribution in contributions]
-        for i in range(len(states[0].agents_money[0])) if i != head_idx
-    ]
-
-    # Calculate average contribution for each round
-    avg_contributions = np.mean(tail_contributions, axis=0)
-
-    # Plot
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1,len(head_contributions)+1), head_contributions, label='Head')
-    plt.plot(range(1,len(avg_contributions)+1), avg_contributions, label='Tail')
-    plt.xlabel('Step')
-    plt.ylabel('Relative Contribution')
-    plt.title(f"({mech_pair[0][0]}, {mech_pair[0][1]}); ({mech_pair[1][0]}, {mech_pair[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
-    plt.legend()
-
-    # Save plot
-    plt.savefig(f"results/rnn/strategy/{config['experiment_name']}_{mech_pair[0][0]},{mech_pair[0][1]};{mech_pair[1][0]},{mech_pair[1][1]}_{tail}.png")
-
-
-def plot_mechs(states, config, tail, mech_pair):
-    """Plots mechs
-
-    Returns: N/A
-    """
-    # Extract game played for each round
-    mechs = [state.mech[0].item() for state in states]
-    # Plot
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1,len(mechs)+1), mechs, label='Mechanism')
-    plt.xlabel('Step')
-    plt.ylabel('Mechanism')
-    plt.title(f"({mech_pair[0][0]}, {mech_pair[0][1]}); ({mech_pair[1][0]}, {mech_pair[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
-    plt.legend()
-
-    # Save plot
-    plt.savefig(f"results/rnn/mech/{config['experiment_name']}_{mech_pair[0][0]},{mech_pair[0][1]};{mech_pair[1][0]},{mech_pair[1][1]}_{tail}.png")
-
-    # Count occurrences of each element
-    counts = Counter(mechs)
-    return counts[0]
-
-
-def plot_returns(mean_returns, config, tail, mech_pair):
-    """Plots returns
-
-    Returns: N/A
-    """
-    x = np.arange(len(mean_returns))
-    plt.figure(figsize=(10, 6))
-    plt.plot(x, mean_returns)
-    plt.xlabel("Timestep")
-    plt.ylabel("Return")
-    plt.title(f"({mech_pair[0][0]}, {mech_pair[0][1]}); ({mech_pair[1][0]}, {mech_pair[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
-    plt.savefig(f"results/rnn/train/{config['experiment_name']}_{mech_pair[0][0]},{mech_pair[0][1]};{mech_pair[1][0]},{mech_pair[1][1]}_{tail}.png")
-
-
 
 def batchify(x: dict, agent_list, num_actors):
     x = jnp.stack([x[a] for a in agent_list])
@@ -566,7 +495,82 @@ def make_train(config, tail, mech_pair):
     return train
 
 
-def get_score(mech, rival_mechs, tails, config):
+def plot_contributions(state_seq, mech, gen, config):
+    """Plots contributions
+
+    Returns: N/A
+    """
+    # Part 1: Contributions
+    # Extract contributions for each round
+    contributions = [state.contributions[0] for state in state_seq[1:-1]]
+
+    # Separate contributions for head and tail
+    head_idx = np.where(state_seq[0].agents_money[0] == 10)[0][0]
+    tail_idx = (head_idx + 1) % len(state_seq[0].agents_money[0])
+    tail_endowment = state_seq[0].agents_money[0][tail_idx]
+    head_contributions = [(contribution[head_idx] / 10) for contribution in contributions]
+    tail_contributions = [
+        [(contribution[i] / tail_endowment) for contribution in contributions]
+        for i in range(len(state_seq[0].agents_money[0])) if i != head_idx
+    ]
+    head_contributions = jnp.array(head_contributions)
+    tail_contributions = jnp.array(tail_contributions)
+
+    # Calculate average contribution for each round
+    avg_contributions = np.mean(tail_contributions, axis=0)
+
+    # Part 2: Mechanisms
+    mechs = [state.mech[0] for state in state_seq]
+    mechs = jnp.array(mechs)
+
+    # Plot
+    for idx in range(5):
+        tail = (idx + 1) * 2
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(range(1,len(head_contributions)+1), head_contributions[:, idx, 0], label='Head')
+        plt.plot(range(1,len(avg_contributions)+1), avg_contributions[:, idx, 0], label='Tail')
+
+        # Color background based on mech value
+        for i, smech in enumerate(mechs[:, idx, 0]):
+            if smech == 1:
+                plt.axvspan(i+1, i+2, color='lightred', alpha=0.3)  # Change color and alpha as needed for mech=1
+            else:
+                plt.axvspan(i+1, i+2, color='lightgreen', alpha=0.3)  # Change color and alpha as needed for mech=0
+
+        plt.xlabel('Step')
+        plt.ylabel('Relative Contribution')
+        plt.title(f"pop_size {config['population_size']}; select_size {config['selected_size']}; num_gen {config['num_generations']}; gen {gen}; [green, red] {mech}; tail {tail}")
+        plt.legend()
+
+        # Save plot
+        plt.savefig(f"results/rnn/temp/ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}_gen{gen}_mech{mech}_tail{tail}.png")
+
+
+def plot_mechs(states, config, tail, mech_pair):
+    """Plots mechs
+
+    Returns: N/A
+    """
+    # Extract game played for each round
+    mechs = [state.mech[0].item() for state in states]
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1,len(mechs)+1), mechs, label='Mechanism')
+    plt.xlabel('Step')
+    plt.ylabel('Mechanism')
+    plt.title(f"({mech_pair[0][0]}, {mech_pair[0][1]}); ({mech_pair[1][0]}, {mech_pair[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
+    plt.legend()
+
+    # Save plot
+    plt.savefig(f"results/rnn/mech/{config['experiment_name']}_{mech_pair[0][0]},{mech_pair[0][1]};{mech_pair[1][0]},{mech_pair[1][1]}_{tail}.png")
+
+    # Count occurrences of each element
+    counts = Counter(mechs)
+    return counts[0]
+
+
+def get_state_seq(mech, rival_mechs, tails, config):
     """Meta-objective
 
     Returns: total number of votes against rival mechanisms
@@ -582,14 +586,34 @@ def get_score(mech, rival_mechs, tails, config):
             runner_state, _ = out["runner_state"]
             state_seq = get_rollout(runner_state, config, tail, jnp.array([mech, rival_mech]))
 
-            mechs = [state.mech[0] for state in state_seq]
-            counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
-            return counts
+            # mechs = [state.mech[0] for state in state_seq]
+            # counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
+            # TODO: Return state_seq to enable plotting both mechanism
+            # and contributions
+            # Note: Choose not to plot mean returns because we blindly
+            # believe that it will "just work"
+            # print("type(state_seq)", type(state_seq))
+            # print("type(counts)", type(counts))
+            # return counts
+            return state_seq
 
-        return jax.vmap(process_tail)(jnp.array(tails))
+        state_seq = jax.vmap(process_tail)(jnp.array(tails))
+        return state_seq
 
-    counts = jax.vmap(process_rival)(jnp.array(rival_mechs))
-    return jnp.sum(counts)
+    # counts = jax.vmap(process_rival)(jnp.array(rival_mechs))
+    # return jnp.sum(counts)
+    state_seq = jax.vmap(process_rival)(jnp.array(rival_mechs))
+    return state_seq
+
+
+def get_score(state_seq):
+    """Gets score from state_seq
+
+    Returns: score
+    """
+    mechs = [state.mech[0] for state in state_seq]
+    counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
+    return counts
 
 
 def mutate(mech, key, mutation_rate=0.1):
@@ -617,20 +641,36 @@ def mutate(mech, key, mutation_rate=0.1):
 
 
 # Define the genetic algorithm
-def genetic_algorithm(tails, config, key, population_size=2, selected_size=2, num_generations=2):
+def genetic_algorithm(tails, config, key):
     """Simple genetic algorithm
     
     Returns: best_mech
     """
+    # Retrieve algo params from config
+    population_size = config["population_size"]
+    selected_size = config["selected_size"]
+    num_generations = config["num_generations"]
+
     # Create initial population
     key, pop_key = jax.random.split(key, 2)
     current_population = jax.random.uniform(pop_key, (population_size, 2))
     print(f"Current population:\n{current_population}")
 
-    for _ in range(num_generations):
+    for gen in range(num_generations):
         print("********************")
+
+        state_seqs = [get_state_seq(mech, current_population, tails, config) for mech in current_population]
+        scores = jnp.array([get_score(state_seq) for state_seq in state_seqs])
+        for state_seq, mech in zip(state_seqs, current_population):
+            plot_contributions(state_seq, mech, gen, config)
+        # print("state_seq", state_seq)
+        # mechs = [state.mech[0] for state in state_seq]
+        # print("mechs", mechs)
+        # counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
+        # print("counts", counts)
+
         # Calculate scores for each individual in the population
-        scores = jnp.array([get_score(mech, current_population, tails, config) for mech in current_population])
+        # scores = jnp.array([get_state_seq(mech, current_population, tails, config) for mech in current_population])
         print(f"Scores: {scores}")
 
         # Get the parameters of the individual with the highest score
@@ -678,10 +718,7 @@ def main(config):
     best_mech = genetic_algorithm(
         tails,
         config,
-        key,
-        population_size=10,
-        selected_size=3,
-        num_generations=10
+        key
         )
     end_time = time.time()
     elapsed_time = end_time - start_time
