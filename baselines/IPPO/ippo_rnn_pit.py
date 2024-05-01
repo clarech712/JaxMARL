@@ -597,8 +597,7 @@ def get_state_seq(mech, rival_mechs, tails, config):
             # return counts
             return state_seq
 
-        state_seq = jax.vmap(process_tail)(jnp.array(tails))
-        return state_seq
+        return jax.vmap(process_tail)(jnp.array(tails))
 
     # counts = jax.vmap(process_rival)(jnp.array(rival_mechs))
     # return jnp.sum(counts)
