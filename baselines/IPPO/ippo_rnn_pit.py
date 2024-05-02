@@ -534,40 +534,17 @@ def plot_contributions(state_seq, mech, gen, config):
         # Color background based on mech value
         for i, smech in enumerate(mechs[:, idx, 0]):
             if smech == 1:
-                plt.axvspan(i+1, i+2, color='lightred', alpha=0.3)  # Change color and alpha as needed for mech=1
+                plt.axvspan(i+1, i+2, color='lightblue', alpha=0.3)  # Change color and alpha as needed for mech=1
             else:
                 plt.axvspan(i+1, i+2, color='lightgreen', alpha=0.3)  # Change color and alpha as needed for mech=0
 
         plt.xlabel('Step')
         plt.ylabel('Relative Contribution')
-        plt.title(f"pop_size {config['population_size']}; select_size {config['selected_size']}; num_gen {config['num_generations']}; gen {gen}; [green, red] {mech}; tail {tail}")
+        plt.title(f"pop_size {config['population_size']}; select_size {config['selected_size']}; num_gen {config['num_generations']}; gen {gen}; [green blue] {mech}; tail {tail}")
         plt.legend()
 
         # Save plot
         plt.savefig(f"results/rnn/temp/ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}_gen{gen}_mech{mech}_tail{tail}.png")
-
-
-def plot_mechs(states, config, tail, mech_pair):
-    """Plots mechs
-
-    Returns: N/A
-    """
-    # Extract game played for each round
-    mechs = [state.mech[0].item() for state in states]
-    # Plot
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1,len(mechs)+1), mechs, label='Mechanism')
-    plt.xlabel('Step')
-    plt.ylabel('Mechanism')
-    plt.title(f"({mech_pair[0][0]}, {mech_pair[0][1]}); ({mech_pair[1][0]}, {mech_pair[1][1]}); tail {tail}; seed {config['SEED']}; timesteps {format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))}; {config['num_games']} of {config['num_rounds']} rounds")
-    plt.legend()
-
-    # Save plot
-    plt.savefig(f"results/rnn/mech/{config['experiment_name']}_{mech_pair[0][0]},{mech_pair[0][1]};{mech_pair[1][0]},{mech_pair[1][1]}_{tail}.png")
-
-    # Count occurrences of each element
-    counts = Counter(mechs)
-    return counts[0]
 
 
 def get_state_seq(mech, rival_mechs, tails, config):
@@ -588,14 +565,8 @@ def get_state_seq(mech, rival_mechs, tails, config):
 
             # mechs = [state.mech[0] for state in state_seq]
             # counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
-            # TODO: Return state_seq to enable plotting both mechanism
-            # and contributions
-            # Note: Choose not to plot mean returns because we blindly
-            # believe that it will "just work"
-            # print("type(state_seq)", type(state_seq))
-            # print("type(counts)", type(counts))
             # return counts
-            return state_seq
+            return state_seq # instead extract agents_money, contributions, mech
 
         return jax.vmap(process_tail)(jnp.array(tails))
 
