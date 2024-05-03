@@ -500,28 +500,43 @@ def plot_contributions(state_seq, mech, gen, config):
 
     Returns: N/A
     """
+    print(f"len(state_seq) {len(state_seq)}")
+    print(f"state_seq[0].contributions.shape {state_seq[0].contributions.shape}")
     # Part 1: Contributions
     # Extract contributions for each round
     contributions = [state.contributions[0] for state in state_seq[1:-1]]
+    print(f"contributions {contributions}")
 
     # Separate contributions for head and tail
     head_idx = np.where(state_seq[0].agents_money[0] == 10)[0][0]
+    print(f"head_idx {head_idx}")
     tail_idx = (head_idx + 1) % len(state_seq[0].agents_money[0])
+    print(f"tail_idx {tail_idx}")
     tail_endowment = state_seq[0].agents_money[0][tail_idx]
+    print(f"tail_endowment {tail_endowment}")
     head_contributions = [(contribution[head_idx] / 10) for contribution in contributions]
+    print(f"head_contributions {head_contributions}")
     tail_contributions = [
         [(contribution[i] / tail_endowment) for contribution in contributions]
         for i in range(len(state_seq[0].agents_money[0])) if i != head_idx
     ]
+    print(f"tail_contributions {tail_contributions}")
     head_contributions = jnp.array(head_contributions)
+    print(f"head_contributions {head_contributions}")
+    print(f"head_contributions.shape {head_contributions.shape}")
     tail_contributions = jnp.array(tail_contributions)
+    print(f"tail_contributions {tail_contributions}")
+    print(f"tail_contributions.shape {tail_contributions.shape}")
 
     # Calculate average contribution for each round
     avg_contributions = np.mean(tail_contributions, axis=0)
+    print(f"avg_contributions {avg_contributions}")
+    print(f"avg_contributions.shape {avg_contributions.shape}")
 
     # Part 2: Mechanisms
     mechs = [state.mech[0] for state in state_seq]
     mechs = jnp.array(mechs)
+    print(f"mechs {mechs}")
 
     # Plot
     for idx in range(5):
@@ -533,9 +548,7 @@ def plot_contributions(state_seq, mech, gen, config):
 
         # Color background based on mech value
         for i, smech in enumerate(mechs[:, idx, 0]):
-            if smech == 1:
-                plt.axvspan(i+1, i+2, color='lightblue', alpha=0.3)  # Change color and alpha as needed for mech=1
-            else:
+            if smech == 0:
                 plt.axvspan(i+1, i+2, color='lightgreen', alpha=0.3)  # Change color and alpha as needed for mech=0
 
         plt.xlabel('Step')
