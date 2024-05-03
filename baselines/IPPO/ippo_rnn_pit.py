@@ -544,7 +544,7 @@ def plot_contributions(state_seq, mech, gen, config):
         plt.legend()
 
         # Save plot
-        plt.savefig(f"results/rnn/select4/ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}_gen{gen}_mech{mech}_tail{tail}.png")
+        plt.savefig(f"results/rnn/temp/ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}_gen{gen}_mech{mech}_tail{tail}.png")
         plt.close()
 
 
