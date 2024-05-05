@@ -2,7 +2,7 @@
 "LR": 5e-4
 "NUM_ENVS": 2
 "NUM_STEPS": 10
-"TOTAL_TIMESTEPS": 1
+"TOTAL_TIMESTEPS": 50000
 "UPDATE_EPOCHS": 4
 "NUM_MINIBATCHES": 2
 "GAMMA": 0.99
@@ -22,11 +22,11 @@
 "WANDB_MODE" : "disabled"
 
 # Investment params
-"num_rounds": 1
-"num_games": 2
+"num_rounds": 5
+"num_games": 100
 "experiment_name": "pit"
 
 # Genetic algo params
-"population_size": 4
-"selected_size": 2
-"num_generations": 1
+"population_size": 10
+"selected_size": 4
+"num_generations": 10

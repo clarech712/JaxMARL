@@ -51,7 +51,8 @@ class VoteEnv(MultiAgentEnv):
 
         # Endowments
         # the amount of money a player receives each round
-        head = jax.random.choice(key, jnp.arange(self.num_agents))
+        # head = jax.random.choice(key, jnp.arange(self.num_agents))
+        head = 0 # TODO: Is this completely fine?
         self.endowments = jnp.repeat(self.tail, repeats=self.num_agents)
         self.endowments = self.endowments.at[head].set(10)
 
