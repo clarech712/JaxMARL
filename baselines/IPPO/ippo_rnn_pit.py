@@ -495,69 +495,51 @@ def make_train(config, tail, mech_pair):
     return train
 
 
-def plot_contributions(state_seq, mech, gen, config):
+def plot_contributions(idx, state_seq, mech, rival_mechs, gen, config):
     """Plots contributions
 
     Returns: N/A
     """
-    print(f"len(state_seq) {len(state_seq)}")
-    print(f"state_seq[0].contributions.shape {state_seq[0].contributions.shape}")
     # Part 1: Contributions
-    # Extract contributions for each round
-    contributions = [state.contributions[0] for state in state_seq[1:-1]]
-    print(f"contributions {contributions}")
-
-    # Separate contributions for head and tail
-    head_idx = np.where(state_seq[0].agents_money[0] == 10)[0][0]
-    print(f"head_idx {head_idx}")
-    tail_idx = (head_idx + 1) % len(state_seq[0].agents_money[0])
-    print(f"tail_idx {tail_idx}")
-    tail_endowment = state_seq[0].agents_money[0][tail_idx]
-    print(f"tail_endowment {tail_endowment}")
-    head_contributions = [(contribution[head_idx] / 10) for contribution in contributions]
-    print(f"head_contributions {head_contributions}")
-    tail_contributions = [
-        [(contribution[i] / tail_endowment) for contribution in contributions]
-        for i in range(len(state_seq[0].agents_money[0])) if i != head_idx
-    ]
-    print(f"tail_contributions {tail_contributions}")
-    head_contributions = jnp.array(head_contributions)
-    print(f"head_contributions {head_contributions}")
-    print(f"head_contributions.shape {head_contributions.shape}")
-    tail_contributions = jnp.array(tail_contributions)
-    print(f"tail_contributions {tail_contributions}")
-    print(f"tail_contributions.shape {tail_contributions.shape}")
-
-    # Calculate average contribution for each round
-    avg_contributions = np.mean(tail_contributions, axis=0)
-    print(f"avg_contributions {avg_contributions}")
-    print(f"avg_contributions.shape {avg_contributions.shape}")
+    rel_contribs = [state.contributions / state.agents_money for state in state_seq]
+    # print(f"rel_contribs[0].shape {rel_contribs[0].shape}")
+    # print(f"rel_contribs {rel_contribs}")
+    rel_contribs_head = jnp.array([rel_contrib[:, :, :, 0] for rel_contrib in rel_contribs])
+    # print(f"rel_contribs_head.shape {rel_contribs_head.shape}")
+    # print(f"rel_contribs_head {rel_contribs_head}")
+    rel_contribs_tail = jnp.array([jnp.mean(rel_contrib[:, :, :, 1:], axis=-1) for rel_contrib in rel_contribs])
+    # print(f"rel_contribs_tail.shape {rel_contribs_tail.shape}")
+    # print(f"rel_contribs_tail {rel_contribs_tail}")
 
     # Part 2: Mechanisms
-    mechs = [state.mech[0] for state in state_seq]
-    mechs = jnp.array(mechs)
-    print(f"mechs {mechs}")
+    mechs = jnp.array([state.mech for state in state_seq])
+    # print(f"mechs.shape {mechs.shape}")
+    # print(f"mechs {mechs}")
+
+    # Part 3: Neighbour
+    nidx = (idx + 1) % config["population_size"]
+    rival_mech = rival_mechs[nidx]
 
     # Plot
     for idx in range(5):
         tail = (idx + 1) * 2
 
         plt.figure(figsize=(10, 6))
-        plt.plot(range(1,len(head_contributions)+1), head_contributions[:, idx, 0], label='Head')
-        plt.plot(range(1,len(avg_contributions)+1), avg_contributions[:, idx, 0], label='Tail')
+        plt.plot(range(1,len(rel_contribs_head)+1), rel_contribs_head[:, nidx, idx, 0], label='Head')
+        plt.plot(range(1,len(rel_contribs_tail)+1), rel_contribs_tail[:, nidx, idx, 0], label='Tail')
 
         # Color background based on mech value
-        for i, smech in enumerate(mechs[:, idx, 0]):
+        for i, smech in enumerate(mechs[:, nidx, idx, 0]):
             if smech == 0:
-                plt.axvspan(i+1, i+2, color='lightgreen', alpha=0.3)  # Change color and alpha as needed for mech=0
+                plt.axvspan(i+0.5, i+1.5, color='lightgreen', alpha=0.3)  # Change color and alpha as needed for mech=0
 
         plt.xlabel('Step')
         plt.ylabel('Relative Contribution')
-        plt.title(f"pop_size {config['population_size']}; select_size {config['selected_size']}; num_gen {config['num_generations']}; gen {gen}; [green blue] {mech}; tail {tail}")
+        plt.title(f"pop_size {config['population_size']}; select_size {config['selected_size']}; num_gen {config['num_generations']}; gen {gen+1}\n(green, white) ({mech}, {rival_mech}); tail {tail}")
         plt.legend()
 
         # Save plot
-        plt.savefig(f"results/rnn/temp/ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}_gen{gen}_mech{mech}_tail{tail}.png")
+        plt.savefig(f"results/rnn/temp/ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}_g{gen+1}_m{mech}_rm{rival_mech}_t{tail}.png")
         plt.close()
 
 
@@ -595,7 +577,7 @@ def get_score(state_seq):
 
     Returns: score
     """
-    mechs = [state.mech[0] for state in state_seq]
+    mechs = [state.mech for state in state_seq]
     counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
     return counts
 
@@ -645,8 +627,8 @@ def genetic_algorithm(tails, config, key):
 
         state_seqs = [get_state_seq(mech, current_population, tails, config) for mech in current_population]
         scores = jnp.array([get_score(state_seq) for state_seq in state_seqs])
-        for state_seq, mech in zip(state_seqs, current_population):
-            plot_contributions(state_seq, mech, gen, config)
+        for idx, (state_seq, mech) in enumerate(zip(state_seqs, current_population)):
+            plot_contributions(idx, state_seq, mech, current_population, gen, config)
         # print("state_seq", state_seq)
         # mechs = [state.mech[0] for state in state_seq]
         # print("mechs", mechs)
