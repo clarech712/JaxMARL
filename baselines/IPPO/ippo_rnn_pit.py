@@ -539,7 +539,8 @@ def plot_contributions(idx, state_seq, mech, rival_mechs, gen, config):
         plt.legend()
 
         # Save plot
-        plt.savefig(f"results/rnn/temp/ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}_g{gen+1}_m{mech}_rm{rival_mech}_t{tail}.png")
+        codename = f"ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}"
+        plt.savefig(f"results/rnn/{codename}/{codename}_g{gen+1}_m{mech}_rm{rival_mech}_t{tail}.png")
         plt.close()
 
 
