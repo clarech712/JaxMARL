@@ -31,7 +31,7 @@ class VoteEnv(MultiAgentEnv):
     def __init__(
             self,
             num_agents=4,
-            num_rounds=2,
+            num_rounds=5,
             num_games=100,
             tail=2,
             seed=0,
@@ -51,8 +51,7 @@ class VoteEnv(MultiAgentEnv):
 
         # Endowments
         # the amount of money a player receives each round
-        # head = jax.random.choice(key, jnp.arange(self.num_agents))
-        head = 0 # TODO: Is this completely fine?
+        head = 0 # TODO: Equivalent to head = jax.random.choice(key, jnp.arange(self.num_agents))?
         self.endowments = jnp.repeat(self.tail, repeats=self.num_agents)
         self.endowments = self.endowments.at[head].set(10)
 
@@ -125,7 +124,7 @@ class VoteEnv(MultiAgentEnv):
 
         # Find y
         y_abs = self.r * (w * actions + (1 - w) * jnp.mean(other_rewards, axis=1))
-        y_rel = self.r * (common_pot/tot_ratio) * (w * ro + (1 - w) * jnp.mean(other_ratios, axis=1)) # TODO should these be a mean??
+        y_rel = self.r * (common_pot / (tot_ratio + 1e-6)) * (w * ro + (1 - w) * jnp.mean(other_ratios, axis=-1)) # TODO: Should these be a mean??
         y = v * y_rel + (1 - v) * y_abs
 
         # Find rewards

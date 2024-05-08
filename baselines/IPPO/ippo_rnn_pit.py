@@ -502,25 +502,17 @@ def plot_contributions(idx, state_seq, mech, rival_mechs, gen, config):
     """
     # Part 1: Contributions
     rel_contribs = [state.contributions / state.agents_money for state in state_seq]
-    # print(f"rel_contribs[0].shape {rel_contribs[0].shape}")
-    # print(f"rel_contribs {rel_contribs}")
     rel_contribs_head = jnp.array([rel_contrib[:, :, :, 0] for rel_contrib in rel_contribs])
-    # print(f"rel_contribs_head.shape {rel_contribs_head.shape}")
-    # print(f"rel_contribs_head {rel_contribs_head}")
     rel_contribs_tail = jnp.array([jnp.mean(rel_contrib[:, :, :, 1:], axis=-1) for rel_contrib in rel_contribs])
-    # print(f"rel_contribs_tail.shape {rel_contribs_tail.shape}")
-    # print(f"rel_contribs_tail {rel_contribs_tail}")
 
     # Part 2: Mechanisms
     mechs = jnp.array([state.mech for state in state_seq])
-    # print(f"mechs.shape {mechs.shape}")
-    # print(f"mechs {mechs}")
 
     # Part 3: Neighbour
     nidx = (idx + 1) % config["population_size"]
     rival_mech = rival_mechs[nidx]
 
-    # Plot
+    # Part 4: Plot
     for idx in range(5):
         tail = (idx + 1) * 2
 
@@ -559,16 +551,10 @@ def get_state_seq(mech, rival_mechs, tails, config):
 
             runner_state, _ = out["runner_state"]
             state_seq = get_rollout(runner_state, config, tail, jnp.array([mech, rival_mech]))
-
-            # mechs = [state.mech[0] for state in state_seq]
-            # counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
-            # return counts
-            return state_seq # instead extract agents_money, contributions, mech
+            return state_seq
 
         return jax.vmap(process_tail)(jnp.array(tails))
 
-    # counts = jax.vmap(process_rival)(jnp.array(rival_mechs))
-    # return jnp.sum(counts)
     state_seq = jax.vmap(process_rival)(jnp.array(rival_mechs))
     return state_seq
 
@@ -627,17 +613,11 @@ def genetic_algorithm(tails, config, key):
         print("********************")
 
         state_seqs = [get_state_seq(mech, current_population, tails, config) for mech in current_population]
+        
+        # Calculate scores for each individual in the population
         scores = jnp.array([get_score(state_seq) for state_seq in state_seqs])
         for idx, (state_seq, mech) in enumerate(zip(state_seqs, current_population)):
             plot_contributions(idx, state_seq, mech, current_population, gen, config)
-        # print("state_seq", state_seq)
-        # mechs = [state.mech[0] for state in state_seq]
-        # print("mechs", mechs)
-        # counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
-        # print("counts", counts)
-
-        # Calculate scores for each individual in the population
-        # scores = jnp.array([get_state_seq(mech, current_population, tails, config) for mech in current_population])
         print(f"Scores: {scores}")
 
         # Get the parameters of the individual with the highest score

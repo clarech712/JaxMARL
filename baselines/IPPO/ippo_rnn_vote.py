@@ -167,97 +167,6 @@ def get_rollout(runner_state, config):
 
     return state_seq
 
-def plot_contributions(states, config):
-    """Plots contributions
-
-    Returns: N/A
-    """
-    # Extract contributions for each round
-    contributions = [state.contributions[0] for state in states[1:-1]]
-
-    # Separate contributions for head and tail
-    head_idx = np.where(states[0].agents_money[0] == 10)[0][0]
-    tail_idx = (head_idx + 1) % len(states[0].agents_money[0])
-    tail_endowment = states[0].agents_money[0][tail_idx]
-    head_contributions = [(contribution[head_idx] / 10) for contribution in contributions]
-    tail_contributions = [
-        [(contribution[i] / tail_endowment) for contribution in contributions]
-        for i in range(len(states[0].agents_money[0])) if i != head_idx
-    ]
-
-    # Calculate average contribution for each round
-    avg_contributions = np.mean(tail_contributions, axis=0)
-
-    # Plot
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1,len(head_contributions)+1), head_contributions, label='Head')
-    plt.plot(range(1,len(avg_contributions)+1), avg_contributions, label='Tail')
-    plt.xlabel('Round')
-    plt.ylabel('Relative contribution')
-    
-    total_timesteps = format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))
-    title = (
-        f"Relative contribution per round of gameplay after training ({config['num_games']} games)\n" +
-        f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {total_timesteps}; {config['num_games']} games of {config['num_rounds']} rounds each"
-    )
-    plt.title(title)    
-    plt.legend()
-
-    # Save plot
-    plt.savefig(f"results/rnn/strategy/{config['experiment_name']}_{config['tail']}.png")
-
-
-def plot_mechs(states, config):
-    """Plots mechs
-    
-    Returns: N/A
-    """
-    # Extract game played for each round
-    mechs = [state.mech[0].item() for state in states]
-    # Plot
-    plt.figure(figsize=(10, 6))
-    plt.plot(range(1,len(mechs)+1), mechs, label='Mechanism')
-    plt.xlabel('Round')
-    plt.ylabel('Mechanism')
-
-    total_timesteps = format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))
-    title = (
-        f"Mechanism chosen per round of gameplay after training ({config['num_games']} games)\n" +
-        f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {total_timesteps}; {config['num_games']} games of {config['num_rounds']} rounds each"
-    )
-    plt.title(title)
-    plt.legend()
-
-    # Save plot
-    plt.savefig(f"results/rnn/mech/{config['experiment_name']}_{config['tail']}.png")
-
-    # Count occurrences of each element
-    counts = Counter(mechs)
-    # Get the most common element
-    most_common_element = counts.most_common(1)[0][0]
-    return most_common_element
-
-
-def plot_returns(mean_returns, config):
-    """Plots returns
-
-    Returns: N/A
-    """
-    x = np.arange(len(mean_returns))
-    plt.figure(figsize=(10, 6))
-    plt.plot(x, mean_returns)
-    plt.xlabel("Round")
-    plt.ylabel("Average return")
-
-    total_timesteps = format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))
-    title = (
-        "Average return across agents per training round\n" +
-        f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {total_timesteps}"
-    )
-    plt.title(title)
-
-    plt.savefig(f"results/rnn/train/{config['experiment_name']}_{config['tail']}.png")
-
 
 def batchify(x: dict, agent_list, num_actors):
     x = jnp.stack([x[a] for a in agent_list])
@@ -277,7 +186,7 @@ def make_train(config):
         tail=config["tail"],
         mech_pair=jnp.array([(config["v_0"], config["w_0"]), (config["v_1"], config["w_1"])])
         )
-    
+
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
@@ -584,6 +493,102 @@ def make_train(config):
     return train
 
 
+def plot_contributions(state_seq, config):
+    """Plots contributions
+
+    Returns: N/A
+    """
+    # Extract contributions for each round
+    contributions = jnp.array([state.contributions[0] for state in state_seq]) # TODO: Compatible with pit
+
+    # Separate contributions for head and tail
+    head_idx = np.where(state_seq[0].agents_money[0] == 10)[0][0]
+    tail_idx = (head_idx + 1) % len(state_seq[0].agents_money[0])
+    tail_endowment = state_seq[0].agents_money[0][tail_idx]
+    head_contributions = [(contribution[head_idx] / 10) for contribution in contributions]
+    tail_contributions = [
+        [(contribution[i] / tail_endowment) for contribution in contributions]
+        for i in range(len(state_seq[0].agents_money[0])) if i != head_idx
+    ]
+
+    # Calculate average contribution for each round
+    avg_contributions = np.mean(tail_contributions, axis=0)
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1,len(head_contributions)+1), head_contributions, label='Head')
+    plt.plot(range(1,len(avg_contributions)+1), avg_contributions, label='Tail')
+    plt.xlabel('Round')
+    plt.ylabel('Relative contribution')
+    
+    total_timesteps = format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))
+    title = (
+        f"Relative contribution per round of gameplay after training ({config['num_games']} games)\n" +
+        f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {total_timesteps}; {config['num_games']} games of {config['num_rounds']} rounds each"
+    )
+    plt.title(title)    
+    plt.legend()
+
+    # Save plot
+    plt.savefig(f"results/rnn/strategy/{config['experiment_name']}_{config['tail']}.png")
+
+
+def plot_mechs(state_seq, config):
+    """Plots mechs
+    
+    Returns: N/A
+    """
+    # Extract game played for each round
+    mechs = [state.mech[0].item() for state in state_seq] # TODO: Compatible with pit
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1,len(mechs)+1), mechs, label='Mechanism')
+    plt.xlabel('Round')
+    plt.ylabel('Mechanism')
+
+    total_timesteps = format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))
+    title = (
+        f"Mechanism chosen per round of gameplay after training ({config['num_games']} games)\n" +
+        f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {total_timesteps}; {config['num_games']} games of {config['num_rounds']} rounds each"
+    )
+    plt.title(title)
+    plt.legend()
+
+    # Save plot
+    plt.savefig(f"results/rnn/mech/{config['experiment_name']}_{config['tail']}.png")
+
+    # Count occurrences of each element
+    counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
+    return counts
+
+
+def plot_returns(returned_episode_returns, config):
+    """Plots returns
+
+    Returns: N/A
+    """
+    # Determine mean returns
+    mean_returns = returned_episode_returns.mean(-1).reshape(-1)
+    assert(jnp.sum(jnp.isnan(mean_returns)) == 0)
+
+    # Plot
+    x = np.arange(len(mean_returns))
+    plt.figure(figsize=(10, 6))
+    plt.plot(x, mean_returns)
+    plt.xlabel("Round")
+    plt.ylabel("Average return")
+    total_timesteps = format_e(Decimal(str(config['TOTAL_TIMESTEPS'])))
+    title = (
+        "Average return across agents per training round\n" +
+        f"{config['experiment_name']}; tail {config['tail']}; seed {config['SEED']}; timesteps {total_timesteps}"
+    )
+    plt.title(title)
+
+    # Save plot
+    plt.savefig(f"results/rnn/train/{config['experiment_name']}_{config['tail']}.png")
+
+
 @hydra.main(version_base=None, config_path="config", config_name="ippo_rnn_vote")
 def main(config):
     config = OmegaConf.to_container(config)
@@ -598,14 +603,15 @@ def main(config):
     train_jit = jax.jit(make_train(config), device=jax.devices()[0])
     out = train_jit(rng)
 
-    mean_returns = out["metrics"]["returned_episode_returns"].mean(-1).reshape(-1)
-    plot_returns(mean_returns, config)
+    returned_episode_returns = out["metrics"]["returned_episode_returns"]
+    plot_returns(returned_episode_returns, config)
 
     runner_state, _ = out["runner_state"]
     state_seq = get_rollout(runner_state, config)
     plot_contributions(state_seq, config)
 
-    plot_mechs(state_seq, config)
+    score = plot_mechs(state_seq, config)
+    print(f"Score: {score}")
 
 
 if __name__ == "__main__":
