@@ -32,7 +32,7 @@ class VoteEnv(MultiAgentEnv):
             self,
             num_agents=4,
             num_rounds=5,
-            num_games=100,
+            num_games=3,
             tail=2,
             seed=0,
             mech_pair=jnp.array([(1, 1), (0, 1)])
@@ -103,7 +103,7 @@ class VoteEnv(MultiAgentEnv):
 
         # Get the actions as array
         actions = jnp.array([actions[i] % 11 for i in self.agents]).reshape((self.num_agents,))
-        actions = actions % (self.endowments + 1)
+        actions = jnp.minimum(actions, self.endowments)
 
         # Common pot
         common_pot = jnp.sum(actions)

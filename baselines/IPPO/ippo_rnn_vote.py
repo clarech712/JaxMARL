@@ -24,6 +24,7 @@ import functools
 
 import matplotlib.pyplot as plt
 from collections import Counter
+import time
 
 
 class ScannedRNN(nn.Module):
@@ -132,7 +133,11 @@ def get_rollout(runner_state, config):
     init_hstate = ScannedRNN.initialize_carry(config["NUM_ENVS"], 10)
 
     # Reconstruct net
+    start_net_init = time.time()
     network.init(key_a, init_hstate, init_x)
+    net_init_time = time.time() - start_net_init
+    print(f"Network initialization time: {net_init_time} seconds")
+
     network_params = train_state.params
 
     done = False
@@ -140,6 +145,8 @@ def get_rollout(runner_state, config):
     reset_key = jax.random.split(key_r, config["NUM_ENVS"])
     obs, state = jax.vmap(env.reset, in_axes=(0,))(reset_key)
     state_seq = [state]
+
+    start_loop = time.time()
     while not done:
         # SELECT ACTION
         rng, _rng = jax.random.split(rng)
@@ -164,8 +171,11 @@ def get_rollout(runner_state, config):
         done = done["__all__"][0]
 
         state_seq.append(state)
+    loop_time = time.time() - start_loop
+    print(f"Loop time: {loop_time} seconds")
 
     return state_seq
+
 
 
 def batchify(x: dict, agent_list, num_actors):
@@ -601,16 +611,27 @@ def main(config):
     )
     rng = jax.random.PRNGKey(config["SEED"])
     train_jit = jax.jit(make_train(config), device=jax.devices()[0])
+
+    start = time.time()
     out = train_jit(rng)
+    train_time = time.time() - start
+    print(f"Training time: {train_time} seconds")
 
     returned_episode_returns = out["metrics"]["returned_episode_returns"]
     plot_returns(returned_episode_returns, config)
 
+    start = time.time()
     runner_state, _ = out["runner_state"]
     state_seq = get_rollout(runner_state, config)
+    rollout_time = time.time() - start
+    print(f"Rollout time: {rollout_time} seconds")
     plot_contributions(state_seq, config)
 
+    start = time.time()
     score = plot_mechs(state_seq, config)
+    plot_time = time.time() - start
+    print(f"Plotting time: {plot_time} seconds")
+
     print(f"Score: {score}")
 
 
