@@ -22,8 +22,8 @@
 "WANDB_MODE" : "disabled"
 
 # Investment params
-"num_rounds": 10
-"num_games": 30
+"num_rounds": 5
+"num_games": 100
 "v_0": 1
 "w_0": 1
 "v_1": 1
