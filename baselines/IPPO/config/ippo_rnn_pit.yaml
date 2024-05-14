@@ -22,11 +22,11 @@
 "WANDB_MODE" : "disabled"
 
 # Investment params
-"num_rounds": 10
-"num_games": 30
+"num_rounds": 5
+"num_games": 100
 "experiment_name": "pit"
 
 # Genetic algo params
 "population_size": 10
-"selected_size": 4
+"selected_size": 5
 "num_generations": 10
