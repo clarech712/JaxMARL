@@ -157,7 +157,7 @@ class VoteEnv(MultiAgentEnv):
         """
         obs = jnp.concatenate(
             (state.agents_money, state.contributions, state.payouts)
-            ).astype(jnp.int32)
+        ).astype(jnp.float32)
 
         return {a: obs for a in self.agents}
 
