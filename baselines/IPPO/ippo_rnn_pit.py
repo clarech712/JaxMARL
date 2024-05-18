@@ -527,11 +527,15 @@ def plot_contributions(idx, state_seq, mech, rival_mechs, gen, config):
 
         plt.xlabel('Step')
         plt.ylabel('Relative Contribution')
-        plt.title(f"pop_size {config['population_size']}; select_size {config['selected_size']}; num_gen {config['num_generations']}; gen {gen+1}\n(green, white) ({mech}, {rival_mech}); tail {tail}")
+        plt.title(
+            f"pop_size {config['population_size']}; select_size {config['selected_size']}; num_gen {config['num_generations']}; gen {gen+1}" +
+            f"; mut_rate {config['mutation_rate']}; eta {config['eta']}" +
+            f"\n(green, white) ({mech}, {rival_mech}); tail {tail}"
+        )
         plt.legend()
 
         # Save plot
-        codename = f"ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}"
+        codename = f"ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}_mr{config['mutation_rate']}_e{config['eta']}"
         plt.savefig(f"results/rnn/{codename}/{codename}_g{gen+1}_m{mech}_rm{rival_mech}_t{tail}.png")
         plt.close()
 
@@ -569,21 +573,26 @@ def get_score(state_seq):
     return counts
 
 
-def mutate(mech, key, mutation_rate=0.1):
+def mutate(config, mech, key):
     """Mutates the parameters of mech
     
     Returns: mutated_mech
     """
+    # Mutation params
+    mutation_rate = config['mutation_rate']
+    eta = config['eta']
+
+    # Obtain v and w
     v, w = mech
     v_key, w_key = jax.random.split(key, 2)
 
-    # Randomly decide whether to mutate each parameter
+    # Randomly decide whether to mutate each parameter with a higher rate
     v_mutate = jax.random.bernoulli(key, mutation_rate)
     w_mutate = jax.random.bernoulli(key, mutation_rate)
 
-    # Add random noise to the parameters if they are mutated
-    v = v + jax.random.normal(v_key, ()) * v_mutate
-    w = w + jax.random.normal(w_key, ()) * w_mutate
+    # Add smaller noise to the parameters if they are mutated
+    v = v + jax.random.normal(v_key, ()) * v_mutate * eta
+    w = w + jax.random.normal(w_key, ()) * w_mutate * eta
 
     # Clip the parameters to ensure they stay within the range [0, 1]
     v = jnp.clip(v, 0, 1)
@@ -611,8 +620,11 @@ def genetic_algorithm(tails, config, key):
 
     for gen in range(num_generations):
         print("********************")
-
-        state_seqs = [get_state_seq(mech, current_population, tails, config) for mech in current_population]
+        # Extend current population with rival mechanisms
+        fixed_mechs = np.array([(1, 1), (0, 1), (0, 0.25)])  # Mechanisms to add
+        rival_mechs = np.concatenate((current_population, fixed_mechs), axis=0)
+        # state_seqs = [get_state_seq(mech, current_population, tails, config) for mech in current_population]
+        state_seqs = [get_state_seq(mech, rival_mechs, tails, config) for mech in current_population]
         
         # Calculate scores for each individual in the population
         scores = jnp.array([get_score(state_seq) for state_seq in state_seqs])
@@ -638,7 +650,7 @@ def genetic_algorithm(tails, config, key):
             parent1, parent2 = jax.random.choice(par_key, selected_population, (2,), replace=False)
 
             # Create a child by combining and mutating the parents' parameters
-            child = mutate((parent1[0], parent2[1]), child_key)
+            child = mutate(config, (parent1[0], parent2[1]), child_key)
             next_generation.append(child)
 
         current_population = jnp.array(next_generation)
