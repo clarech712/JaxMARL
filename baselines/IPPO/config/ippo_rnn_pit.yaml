@@ -26,6 +26,10 @@
 "num_games": 100
 "experiment_name": "pit"
 
+# Mutate params
+"mutation_rate": 0.3
+"eta": 0.3
+
 # Genetic algo params
 "population_size": 10
 "selected_size": 3

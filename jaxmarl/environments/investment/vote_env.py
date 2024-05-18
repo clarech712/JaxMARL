@@ -51,16 +51,16 @@ class VoteEnv(MultiAgentEnv):
 
         # Endowments
         # the amount of money a player receives each round
-        head = 0 # TODO: Equivalent to head = jax.random.choice(key, jnp.arange(self.num_agents))?
+        self.head_idx = 0 # TODO: Equivalent to head = jax.random.choice(key, jnp.arange(self.num_agents))?
         self.endowments = jnp.repeat(self.tail, repeats=self.num_agents)
-        self.endowments = self.endowments.at[head].set(10)
+        self.endowments = self.endowments.at[self.head_idx].set(10)
 
         # Action spaces
         self.action_spaces = {a: Discrete(22) for a, e in zip(self.agents, self.endowments)}
 
         # Observation spaces
         self.observation_spaces = {
-            a: MultiDiscrete([10] * (3 * self.num_agents))
+            a: MultiDiscrete([10] * (3 * self.num_agents + 1))
             for a in self.agents
             }
 
@@ -159,7 +159,11 @@ class VoteEnv(MultiAgentEnv):
             (state.agents_money, state.contributions, state.payouts)
         ).astype(jnp.float32)
 
-        return {a: obs for a in self.agents}
+        # Tell agent if head or tail
+        roles = jnp.repeat(0, repeats=self.num_agents)
+        roles = roles.at[self.head_idx].set(1)
+
+        return {a: jnp.concatenate((obs, jnp.array([role]))).astype(jnp.float32) for a, role in zip(self.agents, roles)}
 
     def is_terminal(self, state):
         """Check whether state is terminal
