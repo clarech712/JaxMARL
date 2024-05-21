@@ -32,5 +32,6 @@
 
 # Genetic algo params
 "population_size": 10
-"selected_size": 3
+"selected_size": 4
+"elite_size": 2
 "num_generations": 10

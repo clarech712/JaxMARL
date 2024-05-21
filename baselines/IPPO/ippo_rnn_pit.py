@@ -528,14 +528,14 @@ def plot_contributions(idx, state_seq, mech, rival_mechs, gen, config):
         plt.xlabel('Step')
         plt.ylabel('Relative Contribution')
         plt.title(
-            f"pop_size {config['population_size']}; select_size {config['selected_size']}; num_gen {config['num_generations']}; gen {gen+1}" +
+            f"pop_size {config['population_size']}; select_size {config['selected_size']}; elite_size {config['elite_size']}; num_gen {config['num_generations']}; gen {gen+1}" +
             f"; mut_rate {config['mutation_rate']}; eta {config['eta']}" +
             f"\n(green, white) ({mech}, {rival_mech}); tail {tail}"
         )
         plt.legend()
 
         # Save plot
-        codename = f"ps{config['population_size']}_ss{config['selected_size']}_ng{config['num_generations']}_mr{config['mutation_rate']}_e{config['eta']}"
+        codename = f"ps{config['population_size']}_ss{config['selected_size']}_es{config['elite_size']}_ng{config['num_generations']}_mr{config['mutation_rate']}_e{config['eta']}"
         plt.savefig(f"results/rnn/{codename}/{codename}_g{gen+1}_m{mech}_rm{rival_mech}_t{tail}.png")
         plt.close()
 
@@ -605,13 +605,17 @@ def mutate(config, mech, key):
 # Define the genetic algorithm
 def genetic_algorithm(tails, config, key):
     """Simple genetic algorithm
-    
+
     Returns: best_mech
     """
     # Retrieve algo params from config
     population_size = config["population_size"]
     selected_size = config["selected_size"]
+    elite_size = config["elite_size"]
     num_generations = config["num_generations"]
+
+    # Assertions for parameter validity
+    assert elite_size <= selected_size, "elite_size cannot be greater than selected_size"
 
     # Create initial population
     key, pop_key = jax.random.split(key, 2)
@@ -625,7 +629,7 @@ def genetic_algorithm(tails, config, key):
         rival_mechs = np.concatenate((current_population, fixed_mechs), axis=0)
         # state_seqs = [get_state_seq(mech, current_population, tails, config) for mech in current_population]
         state_seqs = [get_state_seq(mech, rival_mechs, tails, config) for mech in current_population]
-        
+
         # Calculate scores for each individual in the population
         scores = jnp.array([get_score(state_seq) for state_seq in state_seqs])
         for idx, (state_seq, mech) in enumerate(zip(state_seqs, current_population)):
@@ -644,7 +648,13 @@ def genetic_algorithm(tails, config, key):
         print(f"Selected population:\n{selected_population}")
 
         next_generation = []
-        for _ in range(population_size):
+
+        # Include elite individuals (if any)
+        elite_indices = selected_indices[:elite_size]
+        next_generation.extend(selected_population[elite_indices])
+
+        # Breed for remaining population size
+        for _ in range(population_size - elite_size):
             # Randomly select two parents from the selected population
             key, par_key, child_key = jax.random.split(key, 3)
             parent1, parent2 = jax.random.choice(par_key, selected_population, (2,), replace=False)
