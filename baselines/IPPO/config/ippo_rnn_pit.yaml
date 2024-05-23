@@ -27,11 +27,11 @@
 "experiment_name": "pit"
 
 # Mutate params
-"mutation_rate": 0.3
-"eta": 0.3
+"mutation_rate": 0.4
+"eta": 0.2
 
 # Genetic algo params
 "population_size": 10
 "selected_size": 4
 "elite_size": 2
-"num_generations": 10
+"num_generations": 20
