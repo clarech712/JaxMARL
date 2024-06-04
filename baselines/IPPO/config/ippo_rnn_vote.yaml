@@ -24,9 +24,9 @@
 # Investment params
 "num_rounds": 5
 "num_games": 100
-"v_0": 1
-"w_0": 1
-"v_1": 1
-"w_1": 1
-"tail": 2
-"experiment_name": "sanity"
+"v_0": 1 # 0.37997437
+"w_0": 1 # 0.02747166
+"v_1": 0.51 # 0.0175662
+"w_1": 0.60 # 0.7189661
+"tail": 10
+"experiment_name": "sanity" # "([0.37997437 0.02747166], [0.0175662 0.7189661])"

@@ -28,7 +28,7 @@
 
 # Mutate params
 "mutation_rate": 0.4
-"eta": 0.2
+"eta": 0.4
 
 # Genetic algo params
 "population_size": 10

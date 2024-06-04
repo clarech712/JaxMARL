@@ -79,7 +79,7 @@ class VoteEnv(MultiAgentEnv):
             contributions=jnp.zeros(self.num_agents, dtype=jnp.int32),
             payouts=jnp.zeros(self.num_agents, dtype=jnp.float32),
             step=1,
-            mech=0
+            mech=jax.random.choice(key, jnp.array([0, 1])) # Start rollout with random mechanism
             )
         return self.get_obs(state), state
 
@@ -96,7 +96,12 @@ class VoteEnv(MultiAgentEnv):
             Returns: mechanism index
             """
             votes = jnp.array([actions[i] // 11 for i in self.agents]).reshape((self.num_agents,))
-            return jnp.argmax(jnp.bincount(votes, length=2))
+            bincnt = jnp.bincount(votes, length=2)
+            return jax.lax.cond(
+                bincnt[0] == 2, # TODO: Probably should not be hard-coded
+                lambda: jax.random.choice(key, jnp.array([0, 1])),
+                lambda: jnp.argmax(bincnt)
+            ) # Break tie randomly
 
         mech = jax.lax.cond(state.step % self.num_rounds == 0, vote, lambda: state.mech)
         v, w = self.mech_pair[mech]
