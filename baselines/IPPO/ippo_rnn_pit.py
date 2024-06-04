@@ -650,8 +650,9 @@ def genetic_algorithm(tails, config, key):
         next_generation = []
 
         # Include elite individuals (if any)
-        elite_indices = selected_indices[:elite_size]
-        next_generation.extend(selected_population[elite_indices])
+        elite_indices = selected_indices[-elite_size:] # The best of the best
+        elite_population = selected_population[elite_indices]
+        next_generation.extend(elite_population)
 
         # Breed for remaining population size
         for _ in range(population_size - elite_size):
