@@ -699,7 +699,7 @@ def main(config):
     end_time = time.time()
     elapsed_time = end_time - start_time
     
-    print(f"Best mechanism: {best_mech}")
+    print(f"Best mechanism of last generation: {best_mech}")
     print(f"Time taken: {elapsed_time} seconds")
 
 
