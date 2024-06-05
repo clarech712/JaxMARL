@@ -637,10 +637,10 @@ def genetic_algorithm(tails, config, key):
         print(f"Scores: {scores}")
 
         # Get the parameters of the individual with the highest score
-        best_idx = jnp.argmax(scores)
-        best_mech = current_population[best_idx]
-        best_score = scores[best_idx]
-        print(f"Best score: {best_score}")
+        worst_idx = jnp.argmin(scores)
+        worst_mech = current_population[worst_idx]
+        worst_score = scores[worst_idx]
+        print(f"Worst score: {worst_score}")
 
         # Perform selection based on score
         # selected_indices = jnp.argsort(scores)[-selected_size:]
@@ -668,7 +668,7 @@ def genetic_algorithm(tails, config, key):
         current_population = jnp.array(next_generation)
         print(f"Next generation:\n{current_population}")
 
-    return best_mech
+    return worst_mech
 
 
 @hydra.main(version_base=None, config_path="config", config_name="ippo_rnn_pit")
@@ -686,7 +686,7 @@ def main(config):
     key = jax.random.PRNGKey(0)
 
     start_time = time.time()
-    best_mech = genetic_algorithm(
+    worst_mech = genetic_algorithm(
         tails,
         config,
         key
@@ -694,7 +694,7 @@ def main(config):
     end_time = time.time()
     elapsed_time = end_time - start_time
     
-    print(f"Best mechanism: {best_mech}")
+    print(f"Worst mechanism: {worst_mech}")
     print(f"Time taken: {elapsed_time} seconds")
 
 
