@@ -658,15 +658,6 @@ def main(config):
         config=config,
         mode=config["WANDB_MODE"]
     )
-    """tails = jnp.array([2, 4, 6, 8, 10])
-    v = 0
-    w = 1
-
-    state_seq = get_state_seq(config, tails, v, w)
-    score = get_score(state_seq)
-    print(f"Score: {score}")
-    plot_contributions(state_seq, config, tails, v, w, 0)"""
-
     tails = jnp.array([2, 4, 6, 8, 10])
     key = jax.random.PRNGKey(0)
 
