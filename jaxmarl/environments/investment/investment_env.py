@@ -110,7 +110,7 @@ class InvestmentEnv(MultiAgentEnv):
 
         # Find y
         y_abs = self.r * (self.w * actions + (1 - self.w) * jnp.mean(other_rewards, axis=1))
-        y_rel = self.r * (common_pot/tot_ratio) * (self.w * ro + (1 - self.w) * jnp.mean(other_ratios, axis=1)) # TODO should these be a mean??
+        y_rel = self.r * (common_pot / (tot_ratio + 1e-6)) * (self.w * ro + (1 - self.w) * jnp.mean(other_ratios, axis=1)) # TODO should these be a mean??
         y = self.v * y_rel + (1 - self.v) * y_abs
 
         # Find rewards
