@@ -137,12 +137,13 @@ def get_rollout(runner_state, config, tail, v, w):
     network.init(key_a, init_hstate, init_x)
     network_params = train_state.params
 
-    done = False
+    # done = False
 
     reset_key = jax.random.split(key_r, config["NUM_ENVS"])
     obs, state = jax.vmap(env.reset, in_axes=(0,))(reset_key)
-    state_seq = [state]
-    while not done:
+    # state_seq = [state]
+
+    """while not done: # we update: rng, hstate, obs, state, done
         # SELECT ACTION
         rng, _rng = jax.random.split(rng)
         obs_batch = batchify(obs, env.agents, config["NUM_ACTORS"])
@@ -165,8 +166,36 @@ def get_rollout(runner_state, config, tail, v, w):
         )(rng_step, state, env_act)
         done = done["__all__"][0]
 
-        state_seq.append(state)
+        state_seq.append(state)"""
+    
+    def step(carry, _):
+        rng, hstate, obs, state, done = carry
 
+        rng, _rng = jax.random.split(rng)
+        obs_batch = batchify(obs, env.agents, config["NUM_ACTORS"])
+        ac_in = (
+            obs_batch[np.newaxis, :],
+            last_done[np.newaxis, :],
+        )
+        hstate, pi, _ = network.apply(network_params, hstate, ac_in)
+        action = pi.sample(seed=_rng)
+        env_act = unbatchify(
+            action, env.agents, config["NUM_ENVS"], env.num_agents
+        )
+        env_act = {k: v.squeeze() for k, v in env_act.items()}
+
+        rng, _rng = jax.random.split(rng)
+        rng_step = jax.random.split(_rng, config["NUM_ENVS"])
+        obs, state, _, done, _ = jax.vmap(
+            env.step, in_axes=(0, 0, 0)
+        )(rng_step, state, env_act)
+        done = done["__all__"][0]
+
+        # state_seq.append(state)
+        return (rng, hstate, obs, state, done), state
+
+    carry = (rng, hstate, obs, state, False)
+    carry, state_seq = jax.lax.scan(step, carry, None, length=config["num_rounds"])
     return state_seq
 
 
@@ -275,7 +304,7 @@ def make_train(config, tail, v, w):
                 obsv, env_state, reward, done, info = jax.vmap(
                     env.step, in_axes=(0, 0, 0)
                 )(rng_step, env_state, env_act)
-                info = jax.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
+                info = jax.tree_util.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
                 done_batch = batchify(done, env.agents, config["NUM_ACTORS"]).squeeze()
                 transition = Transition(
                     jnp.tile(done["__all__"], env.num_agents),
@@ -450,7 +479,7 @@ def make_train(config, tail, v, w):
             )
             train_state = update_state[0]
             metric = traj_batch.info
-            metric = jax.tree_map(
+            metric = jax.tree_util.tree_map(
                 lambda x: x.reshape(
                     (config["NUM_STEPS"], config["NUM_ENVS"], env.num_agents)
                 ),
@@ -501,15 +530,16 @@ def plot_contributions(state_seq, config, tails, v, w, gen):
     Returns: N/A
     """
     # Part 1: Contributions
-    rel_contribs = jnp.array([state.contributions / state.agents_money for state in state_seq])
-    rel_contribs_head = jnp.array([rel_contrib[:, :, 0] for rel_contrib in rel_contribs])
-    rel_contribs_tail = jnp.array([jnp.mean(rel_contrib[:, :, 1:], axis=-1) for rel_contrib in rel_contribs])
+    # (n_tails, n_rounds, n_envs, n_players)
+    rel_contribs = state_seq.contributions / state_seq.agents_money
+    rel_contribs_head = rel_contribs[:, :, :, 0]
+    rel_contribs_tail = jnp.mean(rel_contribs[:, :, :, 1:], axis=-1)
 
     # Part 2: Plot
     for idx, tail in enumerate(tails):
         plt.figure(figsize=(10, 6))
-        plt.plot(range(1,len(rel_contribs_head)+1), rel_contribs_head[:, idx, 0], label='Head')
-        plt.plot(range(1,len(rel_contribs_tail)+1), rel_contribs_tail[:, idx, 0], label='Tail')
+        plt.plot(range(1,rel_contribs_head.shape[1]+1), rel_contribs_head[idx, :, 0], label='Head')
+        plt.plot(range(1,rel_contribs_head.shape[1]+1), rel_contribs_tail[idx, :, 0], label='Tail')
         plt.xlabel('Step')
         plt.ylabel('Relative Contribution')
         plt.title(
@@ -547,9 +577,7 @@ def get_score(state_seq):
 
     Returns: score
     """
-    payouts = jnp.array([state.payouts[:, :, 0] for state in state_seq])
-    counts = jnp.sum(payouts)
-    return counts
+    return jnp.sum(state_seq.payouts)
 
 
 def mutate(config, mech, key):
