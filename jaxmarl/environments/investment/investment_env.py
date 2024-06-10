@@ -49,16 +49,16 @@ class InvestmentEnv(MultiAgentEnv):
 
         # Endowments
         # the amount of money a player receives each round
-        head = jax.random.choice(key, jnp.arange(self.num_agents))
+        self.head_idx = 0 # TODO: Equivalent to head = jax.random.choice(key, jnp.arange(self.num_agents))?
         self.endowments = jnp.repeat(self.tail, repeats=self.num_agents)
-        self.endowments = self.endowments.at[head].set(10)
+        self.endowments = self.endowments.at[self.head_idx].set(10)
 
         # Action spaces
         self.action_spaces = {a: Discrete(11) for a, e in zip(self.agents, self.endowments)}
 
         # Observation spaces
         self.observation_spaces = {
-            a: MultiDiscrete([10] * (3 * self.num_agents))
+            a: MultiDiscrete([10] * (3 * self.num_agents + 1))
             for a in self.agents
             }
 
@@ -89,7 +89,7 @@ class InvestmentEnv(MultiAgentEnv):
         """
         # Get the actions as array
         actions = jnp.array([actions[i] for i in self.agents]).reshape((self.num_agents,))
-        actions = actions % (self.endowments + 1)
+        actions = jnp.minimum(actions, self.endowments) # actions % (self.endowments + 1)
 
         # Common pot
         common_pot = jnp.sum(actions)
@@ -144,14 +144,18 @@ class InvestmentEnv(MultiAgentEnv):
             (state.agents_money, state.contributions, state.payouts)
             ).astype(jnp.int32)
 
-        return {a: obs for a in self.agents}
+        # Tell agent if head or tail
+        roles = jnp.repeat(0, repeats=self.num_agents)
+        roles = roles.at[self.head_idx].set(1)
+
+        return {a: jnp.concatenate((obs, jnp.array([role]))).astype(jnp.float32) for a, role in zip(self.agents, roles)}
 
     def is_terminal(self, state):
         """Check whether state is terminal
 
         Returns: is_terminal
         """
-        is_terminal = state.step > self.num_rounds + 1
+        is_terminal = state.step > self.num_rounds # + 1
 
         return is_terminal
 

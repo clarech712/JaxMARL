@@ -14,17 +14,15 @@ import distrax
 import hydra
 from omegaconf import OmegaConf
 from decimal import Decimal
-import csv
 
 import jaxmarl
 from jaxmarl.wrappers.baselines import MPELogWrapper
-from jaxmarl.environments.investment import VoteEnv
+from jaxmarl.environments.investment import InvestmentEnv
 
 import wandb
 import functools
 
 import matplotlib.pyplot as plt
-from collections import Counter
 import time
 
 
@@ -77,7 +75,7 @@ class ActorCriticRNN(nn.Module):
         actor_mean = nn.relu(actor_mean)
         actor_mean = nn.Dense(
             self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(actor_mean)        
+        )(actor_mean)    
 
         pi = distrax.Categorical(logits=actor_mean)
 
@@ -102,21 +100,23 @@ class Transition(NamedTuple):
     obs: jnp.ndarray
     info: jnp.ndarray
 
+
 def format_e(n):
     a = '%E' % n
     return a.split('E')[0].rstrip('0').rstrip('.') + 'E' + a.split('E')[1]
 
-def get_rollout(runner_state, config, tail, mech_pair):
+
+def get_rollout(runner_state, config, tail, v, w):
     """Get rollout with specific train state
 
     Returns: state_seq
     """
-    env = VoteEnv(
+    env = InvestmentEnv(
         num_rounds=config["num_rounds"],
-        num_games=config["num_games"],
         tail=tail,
-        mech_pair=mech_pair
-        )
+        v=v,
+        w=w
+    )
 
     # Action space uniform for all agents
     network = ActorCriticRNN(env.action_space(env.agents[0]).n, config=config)
@@ -180,14 +180,14 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
     return {a: x[i] for i, a in enumerate(agent_list)}
 
 
-def make_train(config, tail, mech_pair):
+def make_train(config, tail, v, w):
     # env = jaxmarl.make(config["ENV_NAME"])
-    env = VoteEnv(
+    env = InvestmentEnv(
         num_rounds=config["num_rounds"],
-        num_games=config["num_games"],
         tail=tail,
-        mech_pair=mech_pair
-        )
+        v=v,
+        w=w
+    )
     
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
@@ -275,7 +275,7 @@ def make_train(config, tail, mech_pair):
                 obsv, env_state, reward, done, info = jax.vmap(
                     env.step, in_axes=(0, 0, 0)
                 )(rng_step, env_state, env_act)
-                info = jax.tree_util.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
+                info = jax.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
                 done_batch = batchify(done, env.agents, config["NUM_ACTORS"]).squeeze()
                 transition = Transition(
                     jnp.tile(done["__all__"], env.num_agents),
@@ -450,7 +450,7 @@ def make_train(config, tail, mech_pair):
             )
             train_state = update_state[0]
             metric = traj_batch.info
-            metric = jax.tree_util.tree_map(
+            metric = jax.tree_map(
                 lambda x: x.reshape(
                     (config["NUM_STEPS"], config["NUM_ENVS"], env.num_agents)
                 ),
@@ -495,72 +495,51 @@ def make_train(config, tail, mech_pair):
     return train
 
 
-def plot_contributions(idx, state_seq, mech, rival_mechs, gen, config):
+def plot_contributions(state_seq, config, tails, v, w, gen):
     """Plots contributions
 
     Returns: N/A
     """
     # Part 1: Contributions
     rel_contribs = [state.contributions / state.agents_money for state in state_seq]
-    rel_contribs_head = jnp.array([rel_contrib[:, :, :, 0] for rel_contrib in rel_contribs])
-    rel_contribs_tail = jnp.array([jnp.mean(rel_contrib[:, :, :, 1:], axis=-1) for rel_contrib in rel_contribs])
+    rel_contribs_head = jnp.array([rel_contrib[:, :, 0] for rel_contrib in rel_contribs])
+    rel_contribs_tail = jnp.array([jnp.mean(rel_contrib[:, :, 1:], axis=-1) for rel_contrib in rel_contribs])
 
-    # Part 2: Mechanisms
-    mechs = jnp.array([state.mech for state in state_seq])
-
-    # Part 3: Neighbour
-    nidx = (idx + 1) % config["population_size"]
-    rival_mech = rival_mechs[nidx]
-
-    # Part 4: Plot
-    for idx in range(5):
-        tail = (idx + 1) * 2
-
+    # Part 2: Plot
+    for idx, tail in enumerate(tails):
         plt.figure(figsize=(10, 6))
-        plt.plot(range(1,len(rel_contribs_head)+1), rel_contribs_head[:, nidx, idx, 0], label='Head')
-        plt.plot(range(1,len(rel_contribs_tail)+1), rel_contribs_tail[:, nidx, idx, 0], label='Tail')
-
-        # Color background based on mech value
-        for i, smech in enumerate(mechs[:, nidx, idx, 0]):
-            if smech == 0:
-                plt.axvspan(i+0.5, i+1.5, color='lightgreen', alpha=0.3)  # Change color and alpha as needed for mech=0
-
+        plt.plot(range(1,len(rel_contribs_head)+1), rel_contribs_head[:, idx, 0], label='Head')
+        plt.plot(range(1,len(rel_contribs_tail)+1), rel_contribs_tail[:, idx, 0], label='Tail')
         plt.xlabel('Step')
         plt.ylabel('Relative Contribution')
         plt.title(
             f"pop_size {config['population_size']}; select_size {config['selected_size']}; elite_size {config['elite_size']}; num_gen {config['num_generations']}; gen {gen+1}" +
             f"; mut_rate {config['mutation_rate']}; eta {config['eta']}" +
-            f"\n(green, white) ({mech}, {rival_mech}); tail {tail}"
+            f"\n[{v} {w}]; tail {tail}"
         )
         plt.legend()
 
         # Save plot
-        codename = f"ps{config['population_size']}_ss{config['selected_size']}_es{config['elite_size']}_ng{config['num_generations']}_mr{config['mutation_rate']}_e{config['eta']}"
-        plt.savefig(f"results/rnn/{codename}/{codename}_g{gen+1}_m{mech}_rm{rival_mech}_t{tail}.png")
+        codename = f"TEMP_ps{config['population_size']}_ss{config['selected_size']}_es{config['elite_size']}_ng{config['num_generations']}_mr{config['mutation_rate']}_e{config['eta']}"
+        plt.savefig(f"results/rnn/{codename}/{codename}_g{gen+1}_m[{v} {w}]_t{tail}.png")
         plt.close()
 
 
-def get_state_seq(mech, rival_mechs, tails, config):
+def get_state_seq(config, tails, v, w):
     """Meta-objective
 
     Returns: total number of votes against rival mechanisms
     """
-    def process_rival(rival_mech):
-        def process_tail(tail):
-            mech_pair = jnp.array([mech, rival_mech])
+    def process_tail(tail):
+        rng = jax.random.PRNGKey(config["SEED"])
+        train_jit = jax.jit(make_train(config, tail, v, w), device=jax.devices()[0])
+        out = train_jit(rng)
 
-            rng = jax.random.PRNGKey(config["SEED"])
-            train_jit = jax.jit(make_train(config, tail, mech_pair), device=jax.devices()[0])
-            out = train_jit(rng)
+        runner_state, _ = out["runner_state"]
+        state_seq = get_rollout(runner_state, config, tail, v, w)
+        return state_seq
 
-            runner_state, _ = out["runner_state"]
-            state_seq = get_rollout(runner_state, config, tail, jnp.array([mech, rival_mech]))
-            return state_seq
-
-        return jax.vmap(process_tail)(jnp.array(tails))
-
-    state_seq = jax.vmap(process_rival)(jnp.array(rival_mechs))
-    return state_seq
+    return jax.vmap(process_tail)(jnp.array(tails))
 
 
 def get_score(state_seq):
@@ -568,8 +547,8 @@ def get_score(state_seq):
 
     Returns: score
     """
-    mechs = [state.mech for state in state_seq]
-    counts = jnp.sum(jnp.array(mechs) == jnp.array(0))
+    payouts = jnp.array([state.payouts[:, :, 0] for state in state_seq])
+    counts = jnp.sum(payouts)
     return counts
 
 
@@ -624,17 +603,16 @@ def genetic_algorithm(tails, config, key):
 
     for gen in range(num_generations):
         print("********************")
-        # Extend current population with rival mechanisms
-        fixed_mechs = np.array([(1, 1), (0, 1), (0, 0.25)])  # Mechanisms to add
-        rival_mechs = np.concatenate((current_population, fixed_mechs), axis=0)
-        # state_seqs = [get_state_seq(mech, current_population, tails, config) for mech in current_population]
-        state_seqs = [get_state_seq(mech, rival_mechs, tails, config) for mech in current_population]
+        # Obtain state sequences for all mechanisms
+        state_seqs = [get_state_seq(config, tails, mech[0], mech[1]) for mech in current_population]
 
         # Calculate scores for each individual in the population
         scores = jnp.array([get_score(state_seq) for state_seq in state_seqs])
-        for idx, (state_seq, mech) in enumerate(zip(state_seqs, current_population)):
-            plot_contributions(idx, state_seq, mech, current_population, gen, config)
         print(f"Scores: {scores}")
+
+        # Plot contributions for each individual in the population
+        for state_seq, mech in zip(state_seqs, current_population):
+            plot_contributions(state_seq, config, tails, mech[0], mech[1], gen)
 
         # Get the parameters of the individual with the highest score
         best_idx = jnp.argmax(scores)
@@ -670,7 +648,7 @@ def genetic_algorithm(tails, config, key):
     return best_mech
 
 
-@hydra.main(version_base=None, config_path="config", config_name="ippo_rnn_pit")
+@hydra.main(version_base=None, config_path="config", config_name="ippo_rnn_meta_welfare")
 def main(config):
     config = OmegaConf.to_container(config)
     wandb.init(
@@ -680,6 +658,14 @@ def main(config):
         config=config,
         mode=config["WANDB_MODE"]
     )
+    """tails = jnp.array([2, 4, 6, 8, 10])
+    v = 0
+    w = 1
+
+    state_seq = get_state_seq(config, tails, v, w)
+    score = get_score(state_seq)
+    print(f"Score: {score}")
+    plot_contributions(state_seq, config, tails, v, w, 0)"""
 
     tails = jnp.array([2, 4, 6, 8, 10])
     key = jax.random.PRNGKey(0)
