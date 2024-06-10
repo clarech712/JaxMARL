@@ -501,7 +501,7 @@ def plot_contributions(state_seq, config, tails, v, w, gen):
     Returns: N/A
     """
     # Part 1: Contributions
-    rel_contribs = [state.contributions / state.agents_money for state in state_seq]
+    rel_contribs = jnp.array([state.contributions / state.agents_money for state in state_seq])
     rel_contribs_head = jnp.array([rel_contrib[:, :, 0] for rel_contrib in rel_contribs])
     rel_contribs_tail = jnp.array([jnp.mean(rel_contrib[:, :, 1:], axis=-1) for rel_contrib in rel_contribs])
 
