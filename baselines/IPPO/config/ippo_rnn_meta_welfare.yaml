@@ -26,8 +26,8 @@
 "experiment_name": "sanity"
 
 # Mutate params
-"mutation_rate": 0.4
-"eta": 0.4
+"mutation_rate": 0.5
+"eta": 0.2
 
 # Genetic algo params
 "population_size": 10
