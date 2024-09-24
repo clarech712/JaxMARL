@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import flax.linen as nn
 import numpy as np
 import optax
+import os
 from flax.linen.initializers import constant, orthogonal
 from typing import Sequence, NamedTuple, Any, Dict
 from flax.training.train_state import TrainState
@@ -59,19 +60,21 @@ class ScannedRNN(nn.Module):
 class ActorCriticRNN(nn.Module):
     action_dim: Sequence[int]
     config: Dict
+    # num_steps : int
 
     @nn.compact
     def __call__(self, hidden, x):
+        num_steps = self.config["NUM_STEPS"]
         obs, dones = x
         embedding = nn.Dense(
-            10, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            num_steps, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
         )(obs)
         embedding = nn.relu(embedding)
 
         rnn_in = (embedding, dones)
         hidden, embedding = ScannedRNN()(hidden, rnn_in)
 
-        actor_mean = nn.Dense(10, kernel_init=orthogonal(2), bias_init=constant(0.0))(
+        actor_mean = nn.Dense(num_steps, kernel_init=orthogonal(2), bias_init=constant(0.0))(
             embedding
         )
         actor_mean = nn.relu(actor_mean)
@@ -81,7 +84,7 @@ class ActorCriticRNN(nn.Module):
 
         pi = distrax.Categorical(logits=actor_mean)
 
-        critic = nn.Dense(10, kernel_init=orthogonal(2), bias_init=constant(0.0))(
+        critic = nn.Dense(num_steps, kernel_init=orthogonal(2), bias_init=constant(0.0))(
             embedding
         )
         critic = nn.relu(critic)
@@ -131,7 +134,7 @@ def get_rollout(runner_state, config, tail, mech_pair):
         jnp.zeros((1, config["NUM_ENVS"], env.observation_space(env.agents[0]).shape[0])),
         jnp.zeros((1, config["NUM_ENVS"])),
     )
-    init_hstate = ScannedRNN.initialize_carry(config["NUM_ENVS"], 10)
+    init_hstate = ScannedRNN.initialize_carry(config["NUM_ENVS"], config["NUM_STEPS"])
 
     # Reconstruct net
     network.init(key_a, init_hstate, init_x)
@@ -142,6 +145,7 @@ def get_rollout(runner_state, config, tail, mech_pair):
     reset_key = jax.random.split(key_r, config["NUM_ENVS"])
     obs, state = jax.vmap(env.reset, in_axes=(0,))(reset_key)
     state_seq = [state]
+    pis_list = []
     while not done:
         # SELECT ACTION
         rng, _rng = jax.random.split(rng)
@@ -156,18 +160,27 @@ def get_rollout(runner_state, config, tail, mech_pair):
             action, env.agents, config["NUM_ENVS"], env.num_agents
         )
         env_act = {k: v.squeeze() for k, v in env_act.items()}
+        
+        pis_list.append(pi)
 
         # STEP ENV
         rng, _rng = jax.random.split(rng)
         rng_step = jax.random.split(_rng, config["NUM_ENVS"])
-        obs, state, _, done, _ = jax.vmap(
+        obs, state, rewards, done, info = jax.vmap(
             env.step, in_axes=(0, 0, 0)
         )(rng_step, state, env_act)
         done = done["__all__"][0]
 
         state_seq.append(state)
-
-    return state_seq
+    
+    if False:
+        return state_seq
+    else:
+        to_return = {
+            "stat_list" : state_seq,
+            "pis_list" : pis_list,
+            }
+        return to_return
 
 
 def batchify(x: dict, agent_list, num_actors):
@@ -201,6 +214,9 @@ def make_train(config, tail, mech_pair):
         if config["SCALE_CLIP_EPS"]
         else config["CLIP_EPS"]
     )
+    
+    carry_thing = 10
+    carry_thing = config["NUM_STEPS"]
 
     env = MPELogWrapper(env)
 
@@ -222,7 +238,7 @@ def make_train(config, tail, mech_pair):
             ),
             jnp.zeros((1, config["NUM_ENVS"])),
         )
-        init_hstate = ScannedRNN.initialize_carry(config["NUM_ENVS"], 10)
+        init_hstate = ScannedRNN.initialize_carry(config["NUM_ENVS"], carry_thing)
         network_params = network.init(_rng, init_hstate, init_x)
         if config["ANNEAL_LR"]:
             tx = optax.chain(
@@ -244,7 +260,7 @@ def make_train(config, tail, mech_pair):
         rng, _rng = jax.random.split(rng)
         reset_rng = jax.random.split(_rng, config["NUM_ENVS"])
         obsv, env_state = jax.vmap(env.reset, in_axes=(0,))(reset_rng)
-        init_hstate = ScannedRNN.initialize_carry(config["NUM_ACTORS"], 10)
+        init_hstate = ScannedRNN.initialize_carry(config["NUM_ACTORS"], config["NUM_STEPS"])
 
         # TRAIN LOOP
         def _update_step(update_runner_state, unused):
@@ -275,7 +291,10 @@ def make_train(config, tail, mech_pair):
                 obsv, env_state, reward, done, info = jax.vmap(
                     env.step, in_axes=(0, 0, 0)
                 )(rng_step, env_state, env_act)
-                info = jax.tree_util.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
+                # def reshape_info(thing_to_rshape):
+                    
+                
+                # info = jax.tree_util.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
                 done_batch = batchify(done, env.agents, config["NUM_ACTORS"]).squeeze()
                 transition = Transition(
                     jnp.tile(done["__all__"], env.num_agents),
@@ -450,12 +469,12 @@ def make_train(config, tail, mech_pair):
             )
             train_state = update_state[0]
             metric = traj_batch.info
-            metric = jax.tree_util.tree_map(
-                lambda x: x.reshape(
-                    (config["NUM_STEPS"], config["NUM_ENVS"], env.num_agents)
-                ),
-                traj_batch.info,
-            )
+            # metric = jax.tree_util.tree_map(
+            #     lambda x: x.reshape(
+            #         (config["NUM_STEPS"], config["NUM_ENVS"], env.num_agents)
+            #     ),
+            #     traj_batch.info,
+            # )
             rng = update_state[-1]
 
             def callback(metric):
@@ -536,6 +555,8 @@ def plot_contributions(mech_idx, state_seq, mech, rival_mechs, gen, config):
 
         # Save plot
         codename = f"ps{config['population_size']}_ss{config['selected_size']}_es{config['elite_size']}_ng{config['num_generations']}_mr{config['mutation_rate']}_e{config['eta']}"
+        if not os.path.exists(f"results/rnn/{codename}"):
+            os.makedirs(f"results/rnn/{codename}")
         plt.savefig(f"results/rnn/{codename}/{codename}_g{gen+1}_m{mech}_rm{rival_mech}_t{tail}.png")
         plt.close()
 
@@ -628,11 +649,14 @@ def genetic_algorithm(tails, config, key):
         fixed_mechs = np.array([(1, 1), (0, 1), (0, 0.25)])  # Mechanisms to add
         rival_mechs = np.concatenate((current_population, fixed_mechs), axis=0)
         # state_seqs = [get_state_seq(mech, current_population, tails, config) for mech in current_population]
+        print("State_seqs")
         state_seqs = [get_state_seq(mech, rival_mechs, tails, config) for mech in current_population]
 
+        print("getting scores")
         # Calculate scores for each individual in the population
         scores = jnp.array([get_score(state_seq) for state_seq in state_seqs])
         for idx, (state_seq, mech) in enumerate(zip(state_seqs, current_population)):
+            #W WOWOWO PLOT CONTRIBUTIONS IS HERE HORRRAAYYYY
             plot_contributions(idx, state_seq, mech, current_population, gen, config)
         print(f"Scores: {scores}")
 

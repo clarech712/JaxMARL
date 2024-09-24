@@ -35,7 +35,7 @@ class VoteEnv(MultiAgentEnv):
             num_games=3,
             tail=2,
             seed=0,
-            mech_pair=jnp.array([(1, 1), (0, 1)])
+            mech_pair=jnp.array([(1.0, 1.0), (0.0, 1.0)])
             ):
         super().__init__(num_agents=4)
         key = jax.random.PRNGKey(seed)
@@ -84,63 +84,95 @@ class VoteEnv(MultiAgentEnv):
         return self.get_obs(state), state
 
     @partial(jax.jit, static_argnums=[0])
-    def step_env(self, key, state, actions):
+    def step_env(self, key, state, actions_raw):
         """Performs step transitions in the environment
 
         Returns: obs, state, rewards, done, info
         """
         # Select mechanism for round
+        actions_raw_arr = jnp.array([actions_raw[i] for i in self.agents])#.reshape((self.num_agents,))
+        
         def vote():
             """Votes for mechanism
 
             Returns: mechanism index
             """
-            votes = jnp.array([actions[i] // 11 for i in self.agents]).reshape((self.num_agents,))
+            votes = jnp.array([actions_raw[i] // 11 for i in self.agents]).reshape((self.num_agents,))
             bincnt = jnp.bincount(votes, length=2)
             return jax.lax.cond(
                 bincnt[0] == 2, # TODO: Probably should not be hard-coded
                 lambda: jax.random.choice(key, jnp.array([0, 1])),
                 lambda: jnp.argmax(bincnt)
             ) # Break tie randomly
+        
+        
+        is_voting_round = (state.step % self.num_rounds == 0)
+        votes = actions_raw_arr // 11
 
         mech = jax.lax.cond(state.step % self.num_rounds == 0, vote, lambda: state.mech)
         v, w = self.mech_pair[mech]
 
         # Get the actions as array
-        actions = jnp.array([actions[i] % 11 for i in self.agents]).reshape((self.num_agents,))
-        actions = jnp.minimum(actions, self.endowments)
+        actions_endow = jnp.array([actions_raw[i] % 11 for i in self.agents]).reshape((self.num_agents,))
+        actions_endow = jnp.minimum(actions_endow, self.endowments)
 
         # Common pot
-        common_pot = jnp.sum(actions)
+        common_pot = jnp.sum(actions_endow)
 
         # Find ratios
-        contribution_ratios = actions / state.agents_money
-        tot_ratio = common_pot / jnp.sum(state.agents_money)
+        contribution_ratios = actions_endow / state.agents_money
+        # tot_ratio = common_pot / jnp.sum(state.agents_money)
+        
+        # THIS IS TO MAKE THE MEANS ACTUALL CORRECT:
+        # This is because you are taking the mean across *other* agents! 
+        act_mean_correction =  1.0 + 1.0/(self.num_agents - 1) 
 
         # Find other rewards
-        other_rewards = jnp.repeat(actions.reshape([1, self.num_agents]), self.num_agents, axis=0).reshape(self.num_agents, self.num_agents)
+        other_rewards = jnp.repeat(actions_endow.reshape([1, self.num_agents]), self.num_agents, axis=0).reshape(self.num_agents, self.num_agents)
         di = jnp.diag_indices(self.num_agents)
         other_rewards = other_rewards.at[di].set(0)
+        
 
         # Find other ratios
-        ro = actions / self.endowments
+        ro = actions_endow / self.endowments
         other_ratios = jnp.repeat(contribution_ratios.reshape([1, self.num_agents]), self.num_agents, axis=0).reshape(self.num_agents, self.num_agents)
         other_ratios = other_ratios.at[di].set(0)
 
         # Find y
-        y_abs = self.r * (w * actions + (1 - w) * jnp.mean(other_rewards, axis=1))
-        y_rel = self.r * (common_pot / (tot_ratio + 1e-6)) * (w * ro + (1 - w) * jnp.mean(other_ratios, axis=-1)) # TODO: Should these be a mean??
+        y_abs = self.r * (w * actions_endow + (1 - w) * jnp.mean(other_rewards, axis=1) * act_mean_correction)
+        y_rel = self.r * (common_pot / jnp.sum(ro)) * (w * ro + (1 - w) * jnp.mean(other_ratios, axis=-1) * act_mean_correction) 
         y = v * y_rel + (1 - v) * y_abs
 
         # Find rewards
-        payouts = y - actions + self.endowments
-        rewards = {a: payouts[i] for a, i in zip(self.agents, range(self.num_agents))}
+        payouts = y - actions_endow + self.endowments
+        
+        reward_breakdown_dict = {
+            "agent_money": state.agents_money,
+            "endow": self.endowments,
+            "contributions": actions_endow,
+            "ro": ro,
+            "other_ratios": other_ratios,
+            "other_rewards": other_rewards,
+            "y_abs": y_abs,
+            "y_rel": y_rel,
+            "y" : y,
+            "v": v,
+            "w": w,
+        }
+        
+        stupid_huge_bonus = (actions_raw_arr == jnp.arange(self.num_agents))* 0.1 * ( 5 - jnp.arange(self.num_agents))
+        
+        dumb_reward_multiplier = 1.0/25.0
+        
+        rewards = {a: payouts[i] * dumb_reward_multiplier for i,a in enumerate(self.agents)}
+        
+        # rewards = {a: stupid_huge_bonus[i] for i, a in enumerate(self.agents)}
 
         # Update the environment state
         step = state.step + 1
         state = State(
             agents_money=self.endowments,
-            contributions=actions,
+            contributions=actions_endow,
             payouts=payouts,
             step=step,
             mech=mech
@@ -150,7 +182,15 @@ class VoteEnv(MultiAgentEnv):
         obs = self.get_obs(state)
         done = self.is_terminal(state)
         dones = {a: done for a in self.agents + ["__all__"]}
-        info = {}
+        info = { "is_voting_round": is_voting_round,
+                "votes": votes,
+                "contributions": actions_endow,
+                "raw_actions": actions_raw_arr,
+                "stupid_huge_bonus": stupid_huge_bonus,
+                "obs": obs,
+                "rewards": rewards,
+                "reward_breakdown": reward_breakdown_dict,
+                }
 
         return (obs, state, rewards, dones, info)
 
@@ -167,8 +207,10 @@ class VoteEnv(MultiAgentEnv):
         # Tell agent if head or tail
         roles = jnp.repeat(0, repeats=self.num_agents)
         roles = roles.at[self.head_idx].set(1)
+        
+        obs_scale_array = jnp.array([10,10,10,10,10,10, 10, 10, 50,50,50,50, 0.1])
 
-        return {a: jnp.concatenate((obs, jnp.array([role]))).astype(jnp.float32) for a, role in zip(self.agents, roles)}
+        return {a: jnp.concatenate((obs, jnp.array([role]))).astype(jnp.float32)/ obs_scale_array for a, role in zip(self.agents, roles)}
 
     def is_terminal(self, state):
         """Check whether state is terminal
@@ -237,7 +279,7 @@ def example():
         print("Actions:", actions)
 
         # Perform step in environment
-        obs, state, rewards, done, _ = env.step_env(key_step, state, actions)
+        obs, state, rewards, done, info = env.step_env(key_step, state, actions)
 
         # Print metadata
         print(f"Observation: {obs}")
