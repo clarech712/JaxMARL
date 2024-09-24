@@ -60,7 +60,7 @@ class VoteEnv(MultiAgentEnv):
 
         # Observation spaces
         self.observation_spaces = {
-            a: MultiDiscrete([10] * (3 * self.num_agents + 1))
+            a: MultiDiscrete([10] * (3 * self.num_agents + 2))
             for a in self.agents
             }
 
@@ -140,7 +140,7 @@ class VoteEnv(MultiAgentEnv):
 
         # Find y
         y_abs = self.r * (w * actions_endow + (1 - w) * jnp.mean(other_rewards, axis=1) * act_mean_correction)
-        y_rel = self.r * (common_pot / jnp.sum(ro)) * (w * ro + (1 - w) * jnp.mean(other_ratios, axis=-1) * act_mean_correction) 
+        y_rel = self.r * (common_pot / (jnp.sum(ro) + 1e-6) ) * (w * ro + (1 - w) * jnp.mean(other_ratios, axis=-1) * act_mean_correction) 
         y = v * y_rel + (1 - v) * y_abs
 
         # Find rewards
@@ -190,6 +190,7 @@ class VoteEnv(MultiAgentEnv):
                 "obs": obs,
                 "rewards": rewards,
                 "reward_breakdown": reward_breakdown_dict,
+                "mech": mech,
                 }
 
         return (obs, state, rewards, dones, info)
@@ -208,9 +209,13 @@ class VoteEnv(MultiAgentEnv):
         roles = jnp.repeat(0, repeats=self.num_agents)
         roles = roles.at[self.head_idx].set(1)
         
-        obs_scale_array = jnp.array([10,10,10,10,10,10, 10, 10, 50,50,50,50, 0.1])
+        mech_to_show = state.mech
+        
 
-        return {a: jnp.concatenate((obs, jnp.array([role]))).astype(jnp.float32)/ obs_scale_array for a, role in zip(self.agents, roles)}
+        
+        obs_scale_array = jnp.array([10,10,10,10,10,10, 10, 10, 50,50,50,50, 0.1, 0.1])
+
+        return {a: jnp.concatenate((obs, jnp.array([role]), jnp.array([mech_to_show]) ) ).astype(jnp.float32)/ obs_scale_array for a, role in zip(self.agents, roles)}
 
     def is_terminal(self, state):
         """Check whether state is terminal
