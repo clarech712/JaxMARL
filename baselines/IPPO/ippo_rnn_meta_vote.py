@@ -173,7 +173,7 @@ def get_rollout(runner_state, config, tail, mech_pair):
 
         state_seq.append(state)
     
-    if False:
+    if True:
         return state_seq
     else:
         to_return = {
